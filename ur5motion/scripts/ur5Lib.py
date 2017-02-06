@@ -172,12 +172,13 @@ class ur5Class():
         # returns flag for successful execution
 
         flag, q1, q2, q3 = self.wristIK(x,y,z)
+        print "Q_forward: ", q1, q2, q3
         if not flag:
             return flag # = False
         else:
             Q = self.jointPosition
             xNow, yNow, zNow = self.wristFK(Q[0],Q[1],Q[2])
-	    print "zNow: ", zNow
+            print "zNow: ", zNow
             distance = sqrt( (x - xNow)**2 + (y - yNow)**2 + (z - zNow)**2)
             if velocity > self.vMax:
                 print "Reducing requested velocity: ", velocity, " to vMax: ", self.vMax

@@ -114,10 +114,10 @@ def main():
 
         
 	elif BackPlane == True:
-	    print(sm.pixel_x,sm.pixel_y,sm.pixel_z)
-	    flag = sm.xyzShift(0.0,0.0,sm.pixel_z, velocity)  
-            #flag = sm.xyzShift(sm.pixel_x, sm.pixel_y, sm.pixel_z, velocity)
-            sm.client.wait_for_result()
+	    flag = sm.xyzShift(0.0,0.0,0.0, velocity)  
+        #flag = sm.xyzShift(sm.pixel_x, sm.pixel_y, sm.pixel_z, velocity)
+        print(sm.pixel_x,sm.pixel_y,sm.pixel_z)
+        sm.client.wait_for_result()
 	    time.sleep(5.0)
 
 
