@@ -148,18 +148,16 @@ class ur5Class():
 
         return status
     
-    def jointGotoWayPoints(QtargetWayPoints,dT):
-
+    def jointGotoWayPoints(QtargetWayPoints,n,dT):
+        thePoints=[]
         retry = True
         while retry:
-           Q = self.jointPosition
-           currentPoint = JointTrajectoryPoint(positions=Q,
+         #  Q = self.jointPosition
+          # currentPoint = JointTrajectoryPoint(positions=Q,
 #                velocities=[0]*6, time_from_start=rospy.Duration(0.0))
-            targetPoint = JointTrajectoryPoint(positions=Qtarget, 
-                velocities=[0]*6, time_from_start=rospy.Duration(dT))
-#            thePoints = [currentPoint, targetPoint]
-            thePoints = [targetPoint]
-
+            for i in range(0,n):
+                targetPoint = JointTrajectoryPoint(positions=QtargetWayPoints[i], velocities=[0]*6, time_from_start=rospy.Duration((i+1)*dT))
+                thePoints.append(targetPoint)
             self.theGoal.trajectory.points = thePoints
 
             self.theGoal.trajectory.header.stamp = rospy.Time.now()
@@ -207,53 +205,51 @@ class ur5Class():
                 flag = False
             return flag
         
-    def xyzGotoWayPoints(self,xT,yT,zT,n,velocity):
-        deltax = xT/n
-        deltay = yT/n
-        deltaz = zT/n
+    
+
+    # commanded shift in wrist location using wrist coordinates
+    def xyzShiftWayPoints(self,delxT,delyT,delzT,velocity):
+        deltax = delxT/n
+        deltay = delyT/n
+        deltaz = delzT/n
         
 
         # returns flag for successful execution
-        x=0
-        y=0
-        x=0
+        delx=0
+        dely=0
+        delz=0
         QtargetWayPoints=[]
         for i in range(0, n-1):
-            x = x + deltax
-            y = y + deltay
-            z = z + deltaz
+            delx = delx + deltax
+            dely = dely + deltay
+            delz = delz + deltaz                                        
+
+            Q = self.jointPosition
+            q5o = self.q5offset
+            x,y,z = self.wristFK(Q[0],Q[1],Q[2])
+            xNew = x + delx*cos(q5o) - dely*sin(q5o)
+            yNew = y + delx*sin(q5o) + dely*cos(q5o)
+            zNew = z +delz
+
             flag, q1, q2, q3 = self.wristIK(x,y,z)
             if not flag:
                 return flag # = False
             else:
-                Q = self.jointPosition
-                xNow, yNow, zNow = self.wristFK(Q[0],Q[1],Q[2])
-                distance = sqrt( (x - xNow)**2 + (y - yNow)**2 + (z - zNow)**2)
-                if velocity > self.vMax:
-                    print "Reducing requested velocity: ", velocity, " to vMax: ", self.vMax
-                    velocity = self.vMax
-                dT = distance/velocity
-                q4, q5 = self.cobraHead(q1,q2,q3)
-                Qtarget = [q1, q2, q3, q4, q5, 0.0]
-                QtargetWayPoints.append(Qtarget)
-            dT=n*dT
-            status = self.jointGotoWayPoints(QtargetWayPoints,dT)
-            if not status == 5:
-                flag = True
-            else:
-                flag = False
-            return flag
-
-    # commanded shift in wrist location using wrist coordinates
-    def xyzShift(self,delx,dely,delz,velocity):
-        Q = self.jointPosition
-        q5o = self.q5offset
-        x,y,z = self.wristFK(Q[0],Q[1],Q[2])
-        xNew = x + delx*cos(q5o) - dely*sin(q5o)
-        yNew = y + delx*sin(q5o) + dely*cos(q5o)
-        zNew = z
-
-        flag = self.xyzGoto(xNew,yNew,zNew,velocity)
+            Q = self.jointPosition
+            xNow, yNow, zNow = self.wristFK(Q[0],Q[1],Q[2])
+            distance = sqrt( (x - xNow)**2 + (y - yNow)**2 + (z - zNow)**2)
+            if velocity > self.vMax:
+                print "Reducing requested velocity: ", velocity, " to vMax: ", self.vMax
+                velocity = self.vMax
+            dT = distance/velocity
+            q4, q5 = self.cobraHead(q1,q2,q3)
+            Qtarget = [q1, q2, q3, q4, q5, 0.0]
+            QtargetWayPoints.append(Qtarget)                 
+        status = self.jointGotoWayPoints(QtargetWayPoints,n,dT)
+        if not status == 5:
+            flag = True
+        else:
+            flag = False
         return flag
 
     def cancel(self):
