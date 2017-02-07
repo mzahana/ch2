@@ -147,6 +147,39 @@ class ur5Class():
                 retry = False
 
         return status
+    
+    def jointGotoWayPoints(QtargetWayPoints,dT):
+
+        retry = True
+        while retry:
+           Q = self.jointPosition
+           currentPoint = JointTrajectoryPoint(positions=Q,
+#                velocities=[0]*6, time_from_start=rospy.Duration(0.0))
+            targetPoint = JointTrajectoryPoint(positions=Qtarget, 
+                velocities=[0]*6, time_from_start=rospy.Duration(dT))
+#            thePoints = [currentPoint, targetPoint]
+            thePoints = [targetPoint]
+
+            self.theGoal.trajectory.points = thePoints
+
+            self.theGoal.trajectory.header.stamp = rospy.Time.now()
+
+            self.client.send_goal(self.theGoal)
+            
+            assessing = True
+            while assessing:
+                status = self.client.get_state()
+                if status > 0:
+                    assessing = False
+
+            if status == 5:
+                print "***REJECTED***"
+                print "Retrying after 5 seconds..."
+                time.sleep(5.0)
+            else:
+                retry = False
+
+        return status
 
         #self.client.wait_for_result()
 
@@ -168,6 +201,43 @@ class ur5Class():
             q4, q5 = self.cobraHead(q1,q2,q3)
             Qtarget = [q1, q2, q3, q4, q5, 0.0]
             status = self.jointGoto(Qtarget,dT)
+            if not status == 5:
+                flag = True
+            else:
+                flag = False
+            return flag
+        
+    def xyzGotoWayPoints(self,xT,yT,zT,n,velocity):
+        deltax = xT/n
+        deltay = yT/n
+        deltaz = zT/n
+        
+
+        # returns flag for successful execution
+        x=0
+        y=0
+        x=0
+        QtargetWayPoints=[]
+        for i in range(0, n-1):
+            x = x + deltax
+            y = y + deltay
+            z = z + deltaz
+            flag, q1, q2, q3 = self.wristIK(x,y,z)
+            if not flag:
+                return flag # = False
+            else:
+                Q = self.jointPosition
+                xNow, yNow, zNow = self.wristFK(Q[0],Q[1],Q[2])
+                distance = sqrt( (x - xNow)**2 + (y - yNow)**2 + (z - zNow)**2)
+                if velocity > self.vMax:
+                    print "Reducing requested velocity: ", velocity, " to vMax: ", self.vMax
+                    velocity = self.vMax
+                dT = distance/velocity
+                q4, q5 = self.cobraHead(q1,q2,q3)
+                Qtarget = [q1, q2, q3, q4, q5, 0.0]
+                QtargetWayPoints.append(Qtarget)
+            dT=n*dT
+            status = self.jointGotoWayPoints(QtargetWayPoints,dT)
             if not status == 5:
                 flag = True
             else:
