@@ -16,50 +16,36 @@
 using namespace std;
 using namespace cv;
 
-class CascadeDet{
-
+class CascadeDet
+{
 public:
-	String cascade_name;
-	String video_name; 
-	VideoCapture cap; 
+	//Global vars
+	String cascade_name, video_name, window_name, data_mean, pceNN, nnInput_Data, nn_Output;
 	CascadeClassifier casClassifier;
-	String window_name;
-	RNG rng;
-	vector<Rect> _lasttools;
-	Mat cap_frame;
-	int loop;
-	geometry_msgs::Twist xyzPxMsg;
-	Mat frame;
-	Mat frame_gray;
-	Mat frame_to_ident, frame_color_ident;
-	std::vector<Rect> tools;
-
+	vector<Rect> tools, _lasttools;
+	
+	//Neural net vars
 	CvANN_MLP* nnetwork;
-	int noInLayer, noHidLayer, noOutLayer;
-	Mat layers = (Mat_<int>(1,3) << 18,36,1); //Mat::zeros(3,1,CV_32);
-	int min_L, min_W, no_of_in_layers;
-	String data_mean;
-	String pceNN;
-	String nnInput_Data;
-	String nn_Output;
-	vector<double> data_mean_vec;
-	Mat pce_mat;
-	Mat nnInput_Data_mat, nnInput_Data_matTr;
-	Mat nnTrain_out;
-	vector<double> nn_Output_vec;
-
-	ofstream valueabc;
-	int countImg;
+	Mat layers;
+	int min_L, min_W, no_of_in_layers, no_of_hid_layers, no_of_out_layers;
+	vector<double> data_mean_vec, nn_Output_vec;
+	
+	//Frame matrices
+	Mat frame, frame_gray, frame_to_ident, frame_color_ident;
+	Mat pce_mat, nnInput_Data_mat, nnInput_Data_matTr, nnTrain_out;
+	
+	
+	//Publish vars (automatically initializes with zero vals)
+	geometry_msgs::Twist xyzPxMsg;
 
 	
 
 	//Constructor
 	CascadeDet(){
 		cascade_name = "/home/risc/catkin_ws/src/husky_vision/src/rexmlfiles/toolDetector5_1(3).xml";
-		loop = 0;
 		min_L = 30, min_W = 30;
-		no_of_in_layers = 18;
-		countImg = 0;
+		no_of_in_layers = 18; no_of_hid_layers = 36; no_of_out_layers = 1;
+		layers = (Mat_<int>(1,3) << no_of_in_layers,no_of_hid_layers,no_of_out_layers);
 	}
 
 
@@ -158,25 +144,20 @@ public:
 			return;
 		}
 		frame = cv_ptr -> image;
-		cvtColor( cv_ptr -> image, frame_gray, COLOR_BGR2GRAY );
+		//cvtColor( cv_ptr -> image, frame_gray, COLOR_BGR2GRAY );
 	}
 
 
 	void detectProcess(){
-		int i = 0; 
-		//Mat frame;
-		rng(12345);
-
 		if( !casClassifier.load( cascade_name ) ){ printf("--(!)Error loading xml file\n"); };
 		cout << "VIZ: Frame reading started..." << endl;
 		if ( frame.empty() == 0 ) {
 			detectAndDisplay( frame );
-		}
+		} else {cout << "Frame is empty. Returning..." << endl;}
 	}
-
-
-
-
+	
+	
+	//NN train functions
 	void trainNN(){
 		readDataFiles();
 		nnetwork = new CvANN_MLP;
@@ -188,7 +169,8 @@ public:
 			CvANN_MLP_TrainParams::BACKPROP,
 			0.1,
 			0.1);
-
+		
+		//Crop the last element of nn_Output_vec
 		nnTrain_out = Mat::zeros(nn_Output_vec.size()-1,1,CV_64F);
 		for (int i = 0; i < nn_Output_vec.size()-1; i++)
 		{
@@ -211,7 +193,7 @@ private:
         Mat test_input = Mat::zeros(no_of_in_layers,1,CV_64F);
         Mat test_input_real = Mat::zeros(1,no_of_in_layers,CV_64F);
 
-	    Mat frame_gray(480,640,CV_8U);
+	    //Mat frame_gray(480,640,CV_8U);
 	    Mat img_Rect = _frame;
 	    Mat nn_Img = _frame;
 
@@ -226,15 +208,6 @@ private:
 	  	    Mat toolROI = frame_gray( tools[i] );
 	  	    
 	  	    printf("i = %d\n", (int)i + 1);
-	  	    loop++; 
-
-/*
-			//Simplified Tracking code
-	        if(loop%10 == 0 && computeRectJoinUnion(tools[i], _lasttools[i]) > 0.9 ){
-	  	        rectangle(img_Rect, Point(_lasttools[i].x, _lasttools[i].y), Point(_lasttools[i].x + _lasttools[i].width, _lasttools[i].y + _lasttools[i].height), Scalar(0,0,255)); 
-	  	    } 
-	        _lasttools = tools;
-*/
 
 	        //NN transformations
 	        toolsCroppedTemp = Mat::zeros(min_W,min_L,CV_8U);
@@ -291,7 +264,7 @@ private:
 
 
 
-	// this function computes the ratio of two consecutive bounding boxes
+	// this function computes the ratio of two consecutive bounding boxes (NOT CORRECT!)
 	float computeRectJoinUnion(const CvRect &rc1, const CvRect &rc2)
 	{
 	    CvPoint p1, p2;                 
