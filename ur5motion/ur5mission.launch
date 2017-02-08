@@ -2,8 +2,14 @@
 
 	<arg name="_port" default="/dev/ttyACM1" />
 
+	<machine name="risc" address="10.72.218.7" env-loader="/opt/ros/indigo/env.sh" />
+  	</machine>
+
         <include file="$(find ur_bringup)catkin_ws/src/universal_robot/ur_bringup/launch/ur5_bringup.launch"/>
-        <node pkg="rosserial_python" type="serial_node.py" name="serial_node"  respawn="true">
+
+        <node pkg="rosserial_python" type="serial_node.py" name="serial_node" args="arg $(_port)" respawn="true" output="screen">
+        </node>
+        <node machine="risc" pkg="usb_cam" name="usb_cam" type="usb_cam-node" output="screen" />
         </node>
 
 
