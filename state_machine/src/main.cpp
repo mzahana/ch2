@@ -41,9 +41,15 @@ int main(int argc, char **argv)
 	
 	//Gripper object
 	Gripper_cls gripperObj;
-
-
-    //Publish/Subscribe
+	
+	//Subscribe
+	ros::Subscriber sub_H_mode = node_Sm.subscribe<std_msgs::Int16>("mode_h_main", 100);
+	ros::Subscriber sub_U_mode = node_Sm.subscribe<std_msgs::Int16>("mode_u_main", 100);
+	ros::Subscriber sub_V_mode = node_Sm.subscribe<std_msgs::Int16>("mode_v_main", 100);
+	ros::Subscriber sub_G_mode = node_Sm.subscribe<std_msgs::Int16>("mode_g_main", 100);
+	
+	
+    //Publish
 	ros::Publisher pub_mode = node_Sm.advertise<std_msgs::Int16MultiArray>("mode_system", 1000);
     
 

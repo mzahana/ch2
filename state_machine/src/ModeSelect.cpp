@@ -95,21 +95,60 @@ public:
 				//UR is aligned with valve axis: Move towards valve
 				M_u = 8; M_v = 0; M_g = 0;
 			}
-			else if ( (mode_UR == 9) && (mode_Viz == 6) ) {
-				//mode_Husky internally switched: UR approached to valve for pinching
+			else if ( mode_UR == 9 ) {
+				//mode_UR internally switched: UR approached to valve for pinching
 				//Run gripper pinch, and rotate Husky for different pinch angles
-				M_u = 10; M_v = 0; M_g = 1;
+				M_u = 0; M_v = 0; M_g = 1;
 			}
-			else if ( (mode_UR == 10) && (mode_Grip == 2) ) {
+			else if ( mode_Grip == 2 ) {
 				//Pinch finished: Valve size detected. Move back to tools
-				M_u = 11; M_v = 0; M_g = 0;
+				M_u = 10; M_v = 0; M_g = 0;
+			}
+			else if ( mode_UR == 11 ) {
+				//Pinch operation: Increment a counter in gripper so that it is operated finite times
+				//Valve size detected. Move back to tools
+				M_u = 0; M_v = 0; M_g = 1;
+			}
+			else if ( mode_Grip == 3 ) {
+				//Pinch completed. Move back
+				M_u = 12; M_v = 0; M_g = 0;
+			}
+			else if ( mode_UR == 13 ) {
+				//Move to first tool
+				M_u = 14; M_v = 0; M_g = 0;
+			}
+			else if ( mode_UR == 15 ) {
+				//At the first tool. Run tracking
+				M_u = 16; M_v = 7; M_g = 0;
+			}
+			else if ( (mode_UR == 16) && (mode_Viz == 8) ) {
+				//At the first tool. Keep tracking
+				M_u = 17; M_v = 8; M_g = 0;
+			}
+			else if ( mode_UR == 18 ) {
+				//Gripping the tool
+				M_u = 0; M_v = 0; M_g = 4;
+			}
+			else if ( mode_Grip == 5 ) {
+				//Move back
+				M_u = 19; M_v = 0; M_g = 0;
+			}
+			else if ( mode_UR == 20 ) {
+				//Move to valve
+				M_u = 21; M_v = 0; M_g = 0;
+			}
+			else if ( mode_UR == 22 ) {
+				//Move to valve
+				M_u = 23; M_v = 0; M_g = 0;
 			}
 		}
+		
+		//Collect mode info in an array to publish
 		mode_general[0] = mode_Husky;
 		mode_general[1] = mode_UR;
 		mode_general[2] = mode_Viz;
 		mode_general[3] = mode_Grip;
-		ros::Duration(0.1).sleep(); // sleep for half a second
+		ros::Duration(0.1).sleep(); // sleep for some time
 		return mode_general;
 	}
 };

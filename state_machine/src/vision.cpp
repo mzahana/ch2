@@ -25,8 +25,8 @@ using namespace cv;
 //Main (Highest level) function
 int main(int argc, char **argv)
 {
-	ros::init(argc, argv, "state_machine");
-	ros::NodeHandle node_Sm;
+	ros::init(argc, argv, "vision_main");
+	ros::NodeHandle node_Viz;
 
 	//Mode select class
 	//Manages current mode based on state/information flow
@@ -36,15 +36,12 @@ int main(int argc, char **argv)
 	//Husky object
 	Husky_cls huskyObj;
 	
-	//Vision object
-	Vision_cls visionObj;
-	
 	//Gripper object
 	Gripper_cls gripperObj;
 
 
     //Publish/Subscribe
-	ros::Publisher pub_mode = node_Sm.advertise<std_msgs::Int16MultiArray>("mode_system", 1000);
+	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::Int16MultiArray>("mode_system", 1000);
     
 
 	ros::Rate r(5);
