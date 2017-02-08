@@ -68,5 +68,5 @@ int main(int argc, char **argv)
 	}
 
 	cv::destroyAllWindows();
-	ROS_INFO("State_machine::main.cpp::No error.");
+	ROS_INFO("State_machine::main.cpp::Finished with no error.");
 }
