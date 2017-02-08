@@ -21,14 +21,18 @@ using namespace std;
 using namespace cv;
 
 
+
+//Main (Highest level) function
 int main(int argc, char **argv)
 {
-	ros::init(argc, argv, "image_processor");
+	ros::init(argc, argv, "state_machine");
 	ros::NodeHandle node_Sm;
 
 	//Mode select class
+	//Manages current mode based on state/information flow
 	ModeSelect modeObj;
-	int mode_State = 0;
+	int mode_State(0);
+	
 
 	//Cascade detection object
 	CascadeDet cascadeObj;
@@ -39,7 +43,7 @@ int main(int argc, char **argv)
 
 
     //Publish/Subscribe
-    image_transport::ImageTransport it(node_Sm);
+	image_transport::ImageTransport it(node_Sm);
 	image_transport::Subscriber sub = it.subscribe("usb_cam/image_raw", 1, &CascadeDet::imageCallback, &cascadeObj);
 	ros::Publisher pixelDiff_pub = node_Sm.advertise<geometry_msgs::Twist>("pixelDiff", 1000);
     
