@@ -22,7 +22,8 @@ public:
 	//Global vars
 	String cascade_name, video_name, window_name, data_mean, pceNN, nnInput_Data, nn_Output;
 	CascadeClassifier casClassifier;
-	vector<Rect> tools, _lasttools;
+	vector<Rect> tools, _lasttools, tools_Overlap;
+	double rect_Overlap_rat;
 	
 	//Neural net vars
 	CvANN_MLP* nnetwork;
@@ -46,6 +47,7 @@ public:
 		min_L = 30, min_W = 30;
 		no_of_in_layers = 18; no_of_hid_layers = 36; no_of_out_layers = 1;
 		layers = (Mat_<int>(1,3) << no_of_in_layers,no_of_hid_layers,no_of_out_layers);
+		rect_Overlap_rat = 0.3;
 	}
 
 
@@ -247,7 +249,10 @@ private:
 	        }
 	        toolsColTemp.clear();
 	    }
-	    
+		
+		//Remove overlaps and sort tool sizes
+		tools_NonOverlap = calcRectOverlap(tools);
+		
 	    //-- Show results
 	    imshow( "Image rectangle", _frame );
 	    waitKey(2);
@@ -284,5 +289,71 @@ private:
 	    } else{
 	        return 0;
 	    }
+	}
+	
+	
+	//Calculate box overlapping: if two rectangles overlap more than 0.3
+	//remove the bigger box
+	vector<Rect> calcRectOverlap(const vector<Rect> &tools){
+		//Calculate overlap and store non-overlapping in tools_Overlap
+		vector<Rect> tools_Overlap = tools;
+		if (tools.size() >= 2) {
+			for (int i = 0; i < tools.size() - 1; i++) {
+				for (int j = i+1; j < tools.size(); j++) {
+					if(tools[i] & tools[j] >= 0.3){
+						double Ai = tools[i].width*tools[i].height;
+						double Aj = tools[j].width*tools[j].height;
+						double Amax = max(Ai,Aj);
+						if (Amax == Ai) {tools_Overlap[i].erase();}
+						else {tools_Overlap[j].erase();}
+					}
+				}
+			}
+			
+			//Sort tool sizes
+			vector<int> sizeIdx; //Vector where we store the index order
+			vector<int> sizeVec; //Vector where we store the sizes
+			for (int i = 0; i < tool.size(); i++) {
+				sizeVec.push_back(tools_Overlap[i].x);
+				sizeIdx.push_back(i);
+			}
+			
+			std::sort (sizeVec.begin() , sizeVec.end());
+			
+			
+			//Add pixel difference variation (separation)
+			//Geometrical tests
+			//Horizontal zone check
+			
+			
+			
+			
+			
+		} else {
+			return -1;
+		}
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		return tools_Overlap;
 	}
 };

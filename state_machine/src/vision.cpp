@@ -23,28 +23,34 @@ using namespace cv;
 
 
 //Vision main function. Manages CascadeDet, ValveDet, and Identify classes
+//Subscribes to M_v, publishes mode_Viz
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "vision_main");
 	ros::NodeHandle node_Viz;
 
-	//Mode select class
+	//Mode select class object
 	//Manages current mode based on state/information flow
 	ModeSelect modeObj;
 	std_msgs::Int16MultiArray mode_State;
 	
-	//Husky object
-	Husky_cls huskyObj;
+	//Cascade detection object
+	CascadeDet cascadeObj;
 	
-	//Gripper object
-	Gripper_cls gripperObj;
-
-
-    //Publish/Subscribe
+	//Hough circles object
+	ValveDet valveObj;
+	
+	//Size identification object
+	IdentifySize identObj;
+	
+	//Subscribe
 	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::Int16MultiArray>("mode_system", 1000);
-    
+	
+    //Publish
+	ros::Publisher pub_v_mode = node_Viz.publish<>
+	
 
-	ros::Rate r(5);
+	ros::Rate r(10);
 	while(ros::ok())
 	{
 		//Get current system mode
