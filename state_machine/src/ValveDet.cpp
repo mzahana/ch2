@@ -20,7 +20,8 @@ using namespace cv;
 
 
 //Class for valve circle and center detection.
-//Uses the image _frame from CascadeDet.cpp
+//Input: image frame and frame_gray
+//Output: Circle center and radius
 class ValveDet
 {
 public:

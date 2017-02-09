@@ -22,7 +22,7 @@ using namespace cv;
 
 
 
-//Main (Highest level) function
+//Vision main function. Manages CascadeDet, ValveDet, and Identify classes
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "vision_main");
