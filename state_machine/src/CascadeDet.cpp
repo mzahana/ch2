@@ -35,6 +35,10 @@ public:
 	Mat frame, frame_gray, frame_to_ident, frame_color_ident;
 	Mat pce_mat, nnInput_Data_mat, nnInput_Data_matTr, nnTrain_out;
 	
+	//Separation test vars
+	vector<int> tools_Sep;
+	int sep_Pixel_min, sep_Pixel_max;
+	
 	
 	//Publish vars (automatically initializes with zero vals)
 	geometry_msgs::Twist xyzPxMsg;
@@ -48,6 +52,9 @@ public:
 		no_of_in_layers = 18; no_of_hid_layers = 36; no_of_out_layers = 1;
 		layers = (Mat_<int>(1,3) << no_of_in_layers,no_of_hid_layers,no_of_out_layers);
 		rect_Overlap_rat = 0.3;
+		//
+		sep_Pixel_min = 15;
+		sep_Pixel_max = 75;
 	}
 
 
@@ -155,6 +162,11 @@ public:
 		cout << "VIZ: Frame reading started..." << endl;
 		if ( frame.empty() == 0 ) {
 			detectAndDisplay( frame );
+			//Apply separation test
+			if( separationTest(tools_Ordered) ){
+				cout << "Separation test failed!" << endl;
+				return -1;
+			}
 		} else {cout << "Frame is empty. Returning..." << endl;}
 	}
 	
@@ -188,6 +200,7 @@ public:
 
 private:
 	/** @function detectAndDisplay */
+	//Detected, validated, overlap checked and sorted tools stored in tools_Ordered public var
 	void detectAndDisplay( Mat _frame )
 	{
 		Mat toolsCroppedTemp = Mat::zeros(min_W,min_L,CV_8U);
@@ -251,7 +264,7 @@ private:
 	    }
 		
 		//Remove overlaps and sort tool sizes
-		tools_NonOverlap = calcRectOverlap(tools);
+		tools_Ordered = calcRectOverlap(tools);
 		
 	    //-- Show results
 	    imshow( "Image rectangle", _frame );
@@ -294,7 +307,7 @@ private:
 	
 	//Calculate box overlapping: if two rectangles overlap more than 0.3
 	//remove the bigger box
-	vector<Rect> calcRectOverlap(const vector<Rect> &tools){
+	int calcRectOverlap(vector<Rect> tools){
 		//Calculate overlap and store non-overlapping in tools_Overlap
 		vector<Rect> tools_Overlap = tools;
 		if (tools.size() >= 2) {
@@ -311,49 +324,32 @@ private:
 			}
 			
 			//Sort tool sizes
-			vector<int> sizeIdx; //Vector where we store the index order
-			vector<int> sizeVec; //Vector where we store the sizes
-			for (int i = 0; i < tool.size(); i++) {
+			vector<int> sizeIdx, sizeVec; //Vector to store the index order and the sizes
+			vector<Rect> tools_Ordered; //Vector to store ascending ordered tools (order of initial x)
+			for (int i = 0; i < tools_Overlap.size(); i++) {
 				sizeVec.push_back(tools_Overlap[i].x);
-				sizeIdx.push_back(i);
+				sizeIdx.push_back( distance(sizeVec.begin(), max_element (sizeVec.begin() , sizeVec.end()) ));
+				tools_Ordered.push_back(tools_Overlap[i]);
 			}
 			
-			std::sort (sizeVec.begin() , sizeVec.end());
-			
-			
-			//Add pixel difference variation (separation)
-			//Geometrical tests
-			//Horizontal zone check
-			
-			
-			
-			
-			
+			//Return the overlap checked and ordered tools in tools_Ordered
+			return 0;
 		} else {
+			cout << "ERR: Number of tools detected not enough for size sorting" << endl;
 			return -1;
 		}
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		return tools_Overlap;
+	}
+	
+	
+	//Separation test function
+	int separationTest(vector<Rect> tools_Ordered){
+		for (int i = 0; i < tools_Overlap.size()-1; i++) {
+			int tools_Sep.push_back = tools_Overlap[i+1].x - tools_Overlap[i].x;
+			if ( (tools_Sep.back() < sep_Pixel_min) || (tools_Sep.back() > sep_Pixel_max)) {
+				cout << "Separation of tool [" << i << "] = " << tools_Sep.back() << endl;
+				return 0;
+			}
+		}
+		return 1;
 	}
 };

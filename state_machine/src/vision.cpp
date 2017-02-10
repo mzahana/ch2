@@ -12,9 +12,9 @@
 #include "opencv2/objdetect/objdetect.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 //Vision classes
-#include "ModeSelect.cpp"
 #include "CascadeDet.cpp"
 #include "ValveDet.cpp"
+#include "IdentifySize.cpp"
 
 
 using namespace std;
@@ -22,7 +22,7 @@ using namespace cv;
 
 
 
-//Vision main function. Manages CascadeDet, ValveDet, and Identify classes
+//Vision main function. Manages CascadeDet, ValveDet, and IdentifySize classes
 //Subscribes to M_v, publishes mode_Viz
 int main(int argc, char **argv)
 {
@@ -36,18 +36,17 @@ int main(int argc, char **argv)
 	
 	//Cascade detection object
 	CascadeDet cascadeObj;
-	
 	//Hough circles object
 	ValveDet valveObj;
-	
 	//Size identification object
 	IdentifySize identObj;
+	
 	
 	//Subscribe
 	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::Int16MultiArray>("mode_system", 1000);
 	
     //Publish
-	ros::Publisher pub_v_mode = node_Viz.publish<>
+	ros::Publisher pub_v_mode = node_Viz.publish<std_msgs:Int16>("mode_v_main",1000);
 	
 
 	ros::Rate r(10);
@@ -57,11 +56,13 @@ int main(int argc, char **argv)
 		mode_State.clear(); //Clear array before filling
 		mode_State = modeObj.modeSwitch(modeObj.mode_Husky, modeObj.mode_UR, modeObj.mode_Viz, modeObj.mode_Grip);
 		
-		//Publish the commanded system mode
-		pub_mode.publish(mode_State);
-
-		//Show system state
-        cout << "MAIN: mode: " << mode_system << endl;
+		
+		
+		
+		//Publish the current vision mode
+		pub_v_mode.publish(mode_Viz);
+		//Show the current vision mode
+        cout << "VIZ: mode: " << mode_Viz << endl;
 		
 		//Spin and sleep
         ros::spinOnce();

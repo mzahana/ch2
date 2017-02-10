@@ -7,36 +7,89 @@
 #include "ml.h"
 #include <iostream>
 #include <stdio.h>
-#include <fstream>
 #include <geometry_msgs/Twist.h>
 #include <boost/lexical_cast.hpp>
-
-
+#include <Eigen/Dense>
 
 using namespace std;
 using namespace cv;
+using namespace Eigen;
 
 
 class IdentifySize
 {
 public:
 	vector<int> idx_BW, idx_W, idx_B;
+	int n_Level; //# of detections to store tool tip centers and joint poses
+	int i_Level;
+	MatrixXd M_tools_X (n_Level,6); //Matrix to store tools centers X (assuming six tools detected)
+	MatrixXd M_tools_Y (n_Level,6); //Matrix to store tools centers Y
+	MatrixXd M_joints (n_Level,6); //Matrix to store the joint poses
+	VectorXd M_tools_avgY (1,6); //Vector to store average lengths of tools
 
-
+	//Constructor
 	IdentifySize(){
-		
+		i_Level = 0;
+	}
+	
+	//Method selection function
+	ident_Current(int size_Method, Mat img_gray, Mat img_color){
+		if (size_Method == 0) {
+			filterImg(Mat img_gray, Mat img_color);
+			cout << "Running tool_level_find algorithm..." << endl;
+		} else {
+			findLevels(Mat img_gray);
+			cout << "Running tool_tip_filtering algorithm..." << endl;
+		}
 	}
 	
 	int filterImg(Mat img_gray, Mat img_color){
 		if (img_gray.empty() == 0) {
-			findLength(img_gray, img_color);
+			filterTool(img_gray, img_color);
 			cout << "Running Identification..." << endl;
 			return 0;
-		} else {cout << "No image for Identification" << endl;return -1;}
+		} else {
+			cout << "No image for identification" << endl;
+			return -1;
+		}
 	}
 
 private:
-	void findLength(Mat img_gray, Mat img_color){
+	//Finds the vertical levels of tooltip centers
+	//Store the detected centers and joint positions for n_Level # of frames
+	int findLevels(int n_Level, vector<Rect> tools_Level){
+		//Store the values
+		M_tools_X.resize(i_Level,6);
+		M_tools_Y.resize(i_Level,6);
+		for (int j = 0; j < 6; j++) {
+			M_tools_X.row(i_Level,j) << tools_Level[j].x + 0.5*tools_Level[j].width;
+			M_tools_Y.row(i_Level,j) << tools_Level[j].y + 0.5*tools_Level[j].height;
+		}
+		M_joints.resize(i_Level,6);
+		M_joints.row(i_Level) << joint_Pose[0], joint_Pose[1], joint_Pose[2], joint_Pose[3], joint_Pose[4], joint_Pose[5];
+		
+		//If i_Level = n_Level, calculate y-axis sizes and order
+		if (i_Level = n_Level) {
+			for (int j = 0; j < 6; j++) {
+				M_tools_avgY(1,j) = M_tools_Y.col(j).sum()/n_Level; //Length of the jth tool's center (robot z-axis)
+			}
+		}
+		//Show the tools lengths (the order is the same as of tools_Ordered)
+		cout << "VIZ: Tool lengths: " << M_tools_avgY << endl;
+		//Iterate
+		i_Level++;
+		//Return the current i_Level for checking stopping time of this function
+		return i_Level-1;
+	}
+	
+	
+	//Geometrical tests
+	//Horizontal zone check
+	
+	
+	
+	//Tooltip hole filter function
+	void filterTool(Mat img_gray, Mat img_color){
 		//Convert to black-white
 		Mat img_BW = img_gray > 190;
 		cout << "flanksdn" << (int)img_BW.at<uchar>(100,100) << endl;
