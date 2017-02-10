@@ -46,6 +46,7 @@ def main():
         velocity  	   = 9.0
         velCmd      	   = 7.0
 	degShift   	   = 0.5
+	xBackBlane         = 200.0
 
 	xValveToTools	   = 0.0
 	yValveToTools	   = 450.0
@@ -67,25 +68,21 @@ def main():
 
     # Initialize logical variables
     Crawling 		= True
-    BackPlane	        = False
-    MoveToTool          = False
-    MoveToValve         = False
-    AtTheValve          = False
-    AlignedWithValve    = False
-    BackToTools         = False
-    GripTool            = False
-    ToolGripped         = False 
-    Rotate              = False 
+    Ready 		= True
+    MoveToValve         = True
+    BackPlane	        = True
+    MoveTOTools         = True
+    
 
     while not rospy.is_shutdown():
 ###################################################
-##############  Mode 1: Get ready #################
-###################################################
+#####  Mode 1: Get ready, aligned and backplane ###
+##################################################
 	if sm.ur_mode==0:
 	   time.sleep(0.1)
 	   
 
-	elif sm.ur_mode==1:
+	elif Ready and sm.ur_mode==1:
 	    print "Get ready..."
 	    state_topic = 1 
 	    sm.jointGoto(rospy.get_param('/ur5/poseReady'),dwellTime)
@@ -147,7 +144,7 @@ def main():
 		    flag = sm.xyzShift(0.0, 0.0, 150.0, velCmd)
 		    sm.client.wait_for_result()
 		  
-
+		    Ready=False
 		    state_topic = 2
 
 
@@ -155,7 +152,7 @@ def main():
 
 
 ##########################################################
-### Mode 2: Find the tools     ###
+### Mode 3:  Find the tools and align with the center  ###
 ##########################################################
         
 	elif sm.ur_mode==3:
@@ -165,16 +162,16 @@ def main():
             sm.client.wait_for_result()
 	    if sm.pixel_y <= 2 and sm.pixel_z <= 2:
 		print("I found the 6 tools!")
-		xTools,yTools,zTools= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])# The center ofthe  tool location according to the global coordinates. X here refare to the detiontion point 
+		xTools,yTools,zTools= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
 		print "xTools/yTools/zTools: ", xTools,yTools,zTools
 	    state_topic = 3
 
 
 
 
-##########################################################
-### Mode 3: Find the tools and align with the first    ###
-##########################################################
+##############################################
+### Mode 3: Find  the first  tool          ###
+##############################################
         
 	elif sm.ur_mode==4:
 	    print('I am at the back plane')
@@ -198,14 +195,14 @@ def main():
 ########## Mode 4: Move to valve      #############
 ###################################################
 
-	elif  sm.ur_mode==5:
+	elif MoveToValve and sm.ur_mode==5:
 	    print "I am going to the valve"
 	    zToolsToValve= 587-zFirstTool
             flag = sm.xyzShiftWayPoints(xToolsToValve,yToolsToValve,zToolsToValve,nWayPoints, velocity)
             sm.client.wait_for_result()
 		
 	    state_topic = 6 
-
+	    MoveToValve False
 
 
 
@@ -217,7 +214,7 @@ def main():
 		flag = sm.xyzShift(0.5*sm.pixel_x, 0.5*sm.pixel_y, 0.5*sm.pixel_z, 0.5*velCmd)
 		sm.client.wait_for_result()
 		
-		xValve,yValve,zValve= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])# The valve location according to the global coordinates. X here refare to the detiontion point 
+		xValve,yValve,zValve= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
 		print "xFirstTool/yFirstTool/zFirstTool: ", xFirstTool,yFirstTool,zFirstTool
 
 
@@ -263,25 +260,27 @@ def main():
 
 
 ###################################################
-##############  Mode 8  Back to tools   ###########
+##############  Mode 8  BackBlane    ###########
 ###################################################  
-	elif  sm.ur_mode==12:
-		flag = sm.xyzShift(200,0,0, velocity) # Get closer to the valve in x direction
+	elif BackPlane and  sm.ur_mode==12:
+		flag = sm.xyzShift(xBackBlane,0,0, velocity)
 		sm.client.wait_for_result()
 	    	state_topic = 13
+	    	BackPlane = False
 	    	
 ###################################################
 ##############  Mode 8  Back to tools   ###########
 ###################################################  	    	
 	    	
 	    	
-	elif  sm.ur_mode==14:
+	elif MoveTOTools and  sm.ur_mode==14:
 		flag = sm.xyzShiftWayPoints(0,350,50,nWayPoints, velocity)
             	sm.client.wait_for_result()
             	state_topic = 15
+            	MoveTOTools = False
 	  
 ###################################################
-#############  Mode 9  gripp the right tool   #####
+########  Mode 9  Align with the first tool   #####
 ###################################################  
 	elif  sm.ur_mode==16:
 		flag = sm.xyzShift(0.5*sm.pixel_x, 0.5*sm.pixel_y, 0.5*sm.pixel_z, 0.5*velCmd)
@@ -289,55 +288,57 @@ def main():
 		state_topic = 16
 		
 ###################################################
-#############  Mode               #####
+####  Mode10 get colser to the tool   by 2 mm at a time 
 ###################################################  
 	elif  sm.ur_mode==17:
 		flag = sm.xyzShift(2.0, 0.5*sm.pixel_y, 0.5*sm.pixel_z, 0.5*velCmd)
              	sm.client.wait_for_result()
 		state_topic = 18
+		BackPlane = True
 		
 		
 ###################################################
-#############  Mode               #####
+########## Mode: Move back to the back blane  #####
 ###################################################  
-	elif  sm.ur_mode==19:
-		flag = sm.xyzShift(200,0.0, 0.0, velCmd)
+	elif  BackPlane and sm.ur_mode==19:
+		flag = sm.xyzShift(xBackBlane,0.0, 0.0, velCmd)
              	sm.client.wait_for_result()
-		state_topic = 20					
+		state_topic = 20
+		BackPlane = False
+		MoveToValve True 					
 		
 		
 ###################################################
 #######  Mode 10 back to valve with the tool   ####
 ###################################################
-	elif  sm.ur_mode==21:
+	elif MoveToValve and sm.ur_mode==21:
 		flag = sm.xyzGoto(xValve,xValve,xValve, velocity)# Move to valve point that was recorded in xValve,yValve,zValve
 		sm.client.wait_for_result()
 		state_topic = 22
+		MoveToValve = False
 		
 		
-		
-		
+	
+	
+	
+	
+	
+	
+	
 ###################################################
-#######  Mode 10 back to valve with the tool   ####
+#######          Mode 11 ROTAT with the tool   ####
 ###################################################
-	elif  sm.ur_mode==21:
-		flag = sm.xyzGoto(xValve,xValve,xValve, velocity)# Move to valve point that was recorded in xValve,yValve,zValve
+	elif  sm.ur_mode==23:
+		Q = sm.jointPosition
+		Q[5]=Q[5]+15*np.pi/180
+		Qtarget=[Q[0],Q[1],Q[2],Q[3],Q[4],Q[5]]
+		sm.jointGoto(self,Qtarget,5.0)
 		sm.client.wait_for_result()
-		state_topic = 22		
-		
-		
-	
-	
-	
-	
-	
-	
-###################################################
-#######            Mode 11 ROTAT               ####
-###################################################
-	elif Rotate== True and sm.ur_mode==11:
-		#TODO rotate the gripper
-		state_topic = 12
+		state_topic = 24
+
+
+
+
 
 	
 
