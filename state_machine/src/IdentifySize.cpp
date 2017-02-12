@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <geometry_msgs/Twist.h>
 #include <boost/lexical_cast.hpp>
-#include <Eigen/Dense>
+#include <eigen3/Eigen/Dense>
 
 using namespace std;
 using namespace cv;
@@ -21,25 +21,30 @@ class IdentifySize
 public:
 	vector<int> idx_BW, idx_W, idx_B;
 	int n_Level; //# of detections to store tool tip centers and joint poses
+	vector<double> M_tools_avgY; //Vector to store average lengths of tools (needed outside of this class)
 	int i_Level;
-	MatrixXd M_tools_X (n_Level,6); //Matrix to store tools centers X (assuming six tools detected)
-	MatrixXd M_tools_Y (n_Level,6); //Matrix to store tools centers Y
-	MatrixXd M_joints (n_Level,6); //Matrix to store the joint poses
-	VectorXd M_tools_avgY (1,6); //Vector to store average lengths of tools
-
+	MatrixXd M_tools_X; //Matrix to store tools centers X (assuming six tools detected)
+	MatrixXd M_tools_Y; //Matrix to store tools centers Y
+	MatrixXd M_joints; //Matrix to store the joint poses
+	
 	//Constructor
 	IdentifySize(){
-		i_Level = 0;
+		n_Level = 10;
+		i_Level = 1;
+		M_tools_X = MatrixXd::Zero(n_Level,6);
+		M_tools_Y = MatrixXd::Zero(n_Level,6);
+		M_joints = MatrixXd::Zero(n_Level,6);
 	}
 	
 	//Method selection function
-	ident_Current(int size_Method, Mat img_gray, Mat img_color){
-		if (size_Method == 0) {
-			filterImg(Mat img_gray, Mat img_color);
-			cout << "Running tool_level_find algorithm..." << endl;
+	int ident_Current(vector<Rect> tools_Ordered){
+		vector<Rect> tools_Level = tools_Ordered;
+		int level_Count = findLevels(tools_Level);
+		if (level_Count == n_Level)
+		{
+			return level_Count;
 		} else {
-			findLevels(Mat img_gray);
-			cout << "Running tool_tip_filtering algorithm..." << endl;
+			return 0;
 		}
 	}
 	
@@ -53,29 +58,33 @@ public:
 			return -1;
 		}
 	}
-
+	
 private:
 	//Finds the vertical levels of tooltip centers
 	//Store the detected centers and joint positions for n_Level # of frames
-	int findLevels(int n_Level, vector<Rect> tools_Level){
+	int findLevels(vector<Rect> tools_Level){
 		//Store the values
-		M_tools_X.resize(i_Level,6);
-		M_tools_Y.resize(i_Level,6);
 		for (int j = 0; j < 6; j++) {
-			M_tools_X.row(i_Level,j) << tools_Level[j].x + 0.5*tools_Level[j].width;
-			M_tools_Y.row(i_Level,j) << tools_Level[j].y + 0.5*tools_Level[j].height;
+			M_tools_X (i_Level-1,j) = tools_Level[j].x + 0.5*tools_Level[j].width;
+			M_tools_Y (i_Level-1,j) = tools_Level[j].y + 0.5*tools_Level[j].height;
 		}
-		M_joints.resize(i_Level,6);
-		M_joints.row(i_Level) << joint_Pose[0], joint_Pose[1], joint_Pose[2], joint_Pose[3], joint_Pose[4], joint_Pose[5];
+		cout << "j: " << M_tools_Y << endl;
+		//M_joints.row(i_Level) << joint_Pose[0], joint_Pose[1], joint_Pose[2], joint_Pose[3], joint_Pose[4], joint_Pose[5];
+		M_joints.row(i_Level) << 0, 0, 0, 0, 0, 0;
 		
 		//If i_Level = n_Level, calculate y-axis sizes and order
-		if (i_Level = n_Level) {
+		if (i_Level == n_Level) {
 			for (int j = 0; j < 6; j++) {
-				M_tools_avgY(1,j) = M_tools_Y.col(j).sum()/n_Level; //Length of the jth tool's center (robot z-axis)
+				double M_Ysum = 0;
+				for (int i = 0; i < n_Level; i++){ M_Ysum = M_Ysum + M_tools_Y (i,j); }
+				M_tools_avgY.push_back( M_Ysum/((double)n_Level) ); //Length of the jth tool's center (robot z-axis)
+			}
+			//Show the tools lengths (the order is the same as of tools_Ordered)
+			for (int i = 0; i < 6; i++)	{
+				cout << M_tools_avgY[i] << endl;
 			}
 		}
-		//Show the tools lengths (the order is the same as of tools_Ordered)
-		cout << "VIZ: Tool lengths: " << M_tools_avgY << endl;
+		
 		//Iterate
 		i_Level++;
 		//Return the current i_Level for checking stopping time of this function
@@ -99,16 +108,16 @@ private:
 				if((double)img_BW.at<uchar>(i,j) > 0){img_BW.at<uchar>(i,j) = 1;}
 			}
 		}
-
+		
 		int shift_length = 6;
 		vector<double> coef = {0.1,0.1585,0.2512,0.3981,0.6310,1};
 		Mat B = Mat::zeros(img_BW.rows,img_BW.cols,CV_64F);
 		Mat W = Mat::zeros(img_BW.rows,img_BW.cols,CV_64F);
 		int row_in = 10;
 		int col_in = 10;
-
-
-
+		
+		
+		
 		for (int i = row_in; i < img_BW.rows-row_in-1; i++)
 		{
 			for (int j = col_in; j < img_BW.cols-col_in; j++)
@@ -123,7 +132,7 @@ private:
 						B.at<double>(i,j) = B.at<double>(i,j) + coef[k]*(1 - (double)img_BW.at<uchar>(i,j+k+1));
 					}
 				}
-
+				
 				
 				//If the black condition is satisfied, check white condn
 				if (B.at<double>(i,j) > 0)
@@ -147,8 +156,8 @@ private:
 				
 			}
 		}
-
-
+		
+		
 		//Find the max idx and value of W
 		vector<double> max_B, max_W;
 		vector<int> idx_B, idx_W;
@@ -167,7 +176,7 @@ private:
 				}
 			}
 		}
-
+		
 		
 		//Find the max idx and value of B
 		for (int i = 0; i < B.rows; i++) {
@@ -179,13 +188,13 @@ private:
 				}
 			}
 		}
-
-
+		
+		
 		//Eliminate the rows B>W
 		for (int i = 0; i < max_B.size(); i++) {
-			if (max_B[i] >= max_W[i]){max_B[i] = 0; max_W[i] = 0;}			
+			if (max_B[i] >= max_W[i]){max_B[i] = 0; max_W[i] = 0;}
 		}
-
+		
 		//Show calculated lines
 		for (int i = 0; i < img_color.rows; i++)
 		{
@@ -196,7 +205,7 @@ private:
 		}
 		imshow("Filtered",img_color);
 		waitKey(3);
-
+		
 		for (int i = 0; i < img_BW_show.rows; i++) {
 			for (int j = 0; j < img_BW_show.cols; j++) {
 				if ((int)img_BW_show.at<uchar>(i,j) == 1) {
@@ -204,7 +213,7 @@ private:
 				}
 			}
 		}
-
+		
 		imshow("BW image",img_BW_show);
 		waitKey(3);
 	}

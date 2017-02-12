@@ -16,14 +16,16 @@
 using namespace std;
 using namespace cv;
 
-class CascadeDet
+class MulticascadeDetector
 {
 public:
 	//Global vars
 	String cascade_name, video_name, window_name, data_mean, pceNN, nnInput_Data, nn_Output;
 	CascadeClassifier casClassifier;
 	vector<Rect> tools, _lasttools, tools_Overlap;
+	vector<Rect> tools_Ordered; //Vector to store ascending ordered tools (order of initial x)
 	double rect_Overlap_rat;
+	int cascade_Count;
 	
 	//Neural net vars
 	CvANN_MLP* nnetwork;
@@ -46,15 +48,20 @@ public:
 	
 
 	//Constructor
-	CascadeDet(){
+	MulticascadeDetector(){
+		//Load the cascade classifier
 		cascade_name = "/home/risc/catkin_ws/src/husky_vision/src/rexmlfiles/toolDetector5_1(3).xml";
+		if( !casClassifier.load( cascade_name ) ){ printf("--(!)Error loading xml file\n"); };
+		//Parameter initializations
 		min_L = 30, min_W = 30;
 		no_of_in_layers = 18; no_of_hid_layers = 36; no_of_out_layers = 1;
 		layers = (Mat_<int>(1,3) << no_of_in_layers,no_of_hid_layers,no_of_out_layers);
 		rect_Overlap_rat = 0.3;
-		//
-		sep_Pixel_min = 15;
-		sep_Pixel_max = 75;
+		//Separation check vars: Set based on distance from panel
+		sep_Pixel_min = 40;
+		sep_Pixel_max = 150;
+		//Cascade detection number of successful 6-tool-validation
+		cascade_Count = 0;
 	}
 
 
@@ -157,17 +164,23 @@ public:
 	}
 
 
-	void detectProcess(){
-		if( !casClassifier.load( cascade_name ) ){ printf("--(!)Error loading xml file\n"); };
+	int detectProcess(){
 		cout << "VIZ: Frame reading started..." << endl;
 		if ( frame.empty() == 0 ) {
-			detectAndDisplay( frame );
+			tools_Ordered = detectAndDisplay( frame );
 			//Apply separation test
-			if( separationTest(tools_Ordered) ){
+			if( !separationTest(tools_Ordered) ){
 				cout << "Separation test failed!" << endl;
-				return -1;
+				return 0;
+			} else {
+				cout << "Number of tools validated: [" << tools_Ordered.size() << "]" << endl;
+				cascade_Count++; 
+				return 1;
 			}
-		} else {cout << "Frame is empty. Returning..." << endl;}
+		} else {
+			cout << "Frame is empty. Returning..." << endl;
+			return 0;
+		}
 	}
 	
 	
@@ -201,7 +214,7 @@ public:
 private:
 	/** @function detectAndDisplay */
 	//Detected, validated, overlap checked and sorted tools stored in tools_Ordered public var
-	void detectAndDisplay( Mat _frame )
+	vector<Rect> detectAndDisplay( Mat _frame )
 	{
 		Mat toolsCroppedTemp = Mat::zeros(min_W,min_L,CV_8U);
         vector<double> toolsColTemp;
@@ -246,28 +259,29 @@ private:
 	        	{
 	        		test_input.at<double>(i,0) = test_input.at<double>(i,0) + pce_mat.at<double>(j,i)*toolsColTemp[j];
 	        	}
-	        	cout << "VIZ: [" << i << "] " << test_input.at<double>(i,0) << endl;
 	        }
-	        cout << "VIZ: NN prediction starting..." << endl;
+	        //cout << "VIZ: NN prediction starting..." << endl;
 	        
 	        test_input_real = test_input.t();
 	        Mat nnResult = Mat(1,1,CV_64F); //NN result is binary (here using int data type).
 	        nnetwork -> predict(test_input_real, nnResult);
 	        
-
-	        cout << nnResult.at<double>(0,0) << endl;
+	        //Show the NN prediction result for the ith tool
+	        //cout << nnResult.at<double>(0,0) << endl;
 	        if (nnResult.at<double>(0,0) > 0.75) {
 	        	rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(0,0,255), 2); 
-	        	cout << "VIZ: Tool detected with NN" << endl;
+	        	//cout << "VIZ: Tool detected with NN" << endl;
 	        }
 	        toolsColTemp.clear();
 	    }
 		
 		//Remove overlaps and sort tool sizes
-		tools_Ordered = calcRectOverlap(tools);
+		if ( !calcRectOverlap(tools, _frame) ) {
+		 	cout << "Overlap detection failed!!!" << endl;
+		}
 		
 	    //-- Show results
-	    imshow( "Image rectangle", _frame );
+	    imshow( "Ordered tools", _frame );
 	    waitKey(2);
 
 	    if (tools.size() > 0) {
@@ -278,6 +292,8 @@ private:
 	    
 	    //Clear tools
 	    tools.clear();
+	    //Return the sorted tools
+	    return tools_Ordered;
 	 }
 
 
@@ -307,44 +323,77 @@ private:
 	
 	//Calculate box overlapping: if two rectangles overlap more than 0.3
 	//remove the bigger box
-	int calcRectOverlap(vector<Rect> tools){
+	int calcRectOverlap(vector<Rect> tools, Mat _frame){
 		//Calculate overlap and store non-overlapping in tools_Overlap
 		vector<Rect> tools_Overlap = tools;
 		if (tools.size() >= 2) {
 			for (int i = 0; i < tools.size() - 1; i++) {
 				for (int j = i+1; j < tools.size(); j++) {
-					if(tools[i] & tools[j] >= 0.3){
-						double Ai = tools[i].width*tools[i].height;
-						double Aj = tools[j].width*tools[j].height;
-						double Amax = max(Ai,Aj);
-						if (Amax == Ai) {tools_Overlap[i].erase();}
-						else {tools_Overlap[j].erase();}
+					double Ai = tools[i].width*tools[i].height;
+					double Aj = tools[j].width*tools[j].height;
+					double Amax = max(Ai,Aj);
+					double Amin = max(Ai,Aj);
+					if( (tools[i] & tools[j]).area() >= 0.3*Amin){
+						if (Amax == Ai) {
+							tools_Overlap.erase( remove( tools_Overlap.begin(), tools_Overlap.end(), tools_Overlap[i] ), tools_Overlap.end() );
+						}
+						else {
+							tools_Overlap.erase( remove( tools_Overlap.begin(), tools_Overlap.end(), tools_Overlap[j] ), tools_Overlap.end() );
+						}
 					}
 				}
 			}
-			
-			//Sort tool sizes
-			vector<int> sizeIdx, sizeVec; //Vector to store the index order and the sizes
-			vector<Rect> tools_Ordered; //Vector to store ascending ordered tools (order of initial x)
-			for (int i = 0; i < tools_Overlap.size(); i++) {
-				sizeVec.push_back(tools_Overlap[i].x);
-				sizeIdx.push_back( distance(sizeVec.begin(), max_element (sizeVec.begin() , sizeVec.end()) ));
-				tools_Ordered.push_back(tools_Overlap[i]);
+			//Show non-overlapped detections with green
+			for (int i = 0; i < tools_Overlap.size(); i++)
+			{
+				rectangle(_frame, Point(tools_Overlap[i].x, tools_Overlap[i].y), Point(tools_Overlap[i].x + tools_Overlap[i].width, tools_Overlap[i].y + tools_Overlap[i].height), Scalar(0,255,0), 2);
 			}
+
+			//Sort tools based on horizontal pose
+			vector<int> horPoseIdx, horPoseVec; //Vector to store the index order and the x-axis order
+			vector<Rect> tools_Ovr_Tmp;
 			
+			//Order tools
+			tools_Ordered.clear();
+			tools_Ordered.push_back( tools_Overlap[0] );
+			for (int i = 1; i < tools_Overlap.size(); i++) {
+				vector<Rect>::iterator iter_Order = tools_Ordered.end();
+				for (int k = i-1; k > -1; k--)
+				{
+					if ( (i == 1) && (k == 0) )
+					{
+						if (tools_Overlap[i].x >= tools_Ordered[k].x){
+							tools_Ordered.insert( iter_Order , tools_Overlap[i] );
+						} else {
+							tools_Ordered.insert( iter_Order-1 , tools_Overlap[i] );
+						}
+						break;
+					}
+					if (tools_Overlap[i].x >= tools_Ordered[k].x)
+					{
+						tools_Ordered.insert( iter_Order , tools_Overlap[i] );
+						break;
+					} else if (k == 0) {
+						tools_Ordered.insert( iter_Order-1 , tools_Overlap[i] );
+						break;
+					} else {
+						iter_Order--;
+					}
+				}
+			}
+
 			//Return the overlap checked and ordered tools in tools_Ordered
-			return 0;
+			return 1;
 		} else {
 			cout << "ERR: Number of tools detected not enough for size sorting" << endl;
-			return -1;
+			return 0;
 		}
 	}
 	
-	
 	//Separation test function
 	int separationTest(vector<Rect> tools_Ordered){
-		for (int i = 0; i < tools_Overlap.size()-1; i++) {
-			int tools_Sep.push_back = tools_Overlap[i+1].x - tools_Overlap[i].x;
+		for (int i = 0; i < tools_Ordered.size()-1; i++) {
+			tools_Sep.push_back( tools_Ordered[i+1].x - tools_Ordered[i].x );
 			if ( (tools_Sep.back() < sep_Pixel_min) || (tools_Sep.back() > sep_Pixel_max)) {
 				cout << "Separation of tool [" << i << "] = " << tools_Sep.back() << endl;
 				return 0;
@@ -352,4 +401,37 @@ private:
 		}
 		return 1;
 	}
+	
+	/***************/
+	//Hough circle detection
+	void detect_circle(Mat img, Mat gray){
+		//Publish var
+		geometry_msgs::Twist xyzPxMsg;
+		
+		if (frame.empty() == 0) {
+			//Blur the image to reduce false detections
+			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );
+			vector<Vec3f> circles;
+			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, img.rows/4, 200, 100 );
+			
+			for( size_t i = 0; i < circles.size(); i++ )
+			{
+				Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+				radiusValve = cvRound(circles[i][2]);
+				// draw the circle center
+				circle( img, center, 3, Scalar(0,255,0), -1, 8, 0 );
+				// draw the circle outline
+				circle( img, center, radiusValve, Scalar(0,0,255), 3, 8, 0 );
+				//Calculate distance between the circle center and image center
+				if (i == 0) {
+					xyzPxMsg.linear.x = center.x - ceil(img.cols/2);
+					xyzPxMsg.linear.y = center.y - ceil(img.rows/2);
+				}
+			}
+			//Show the image with circles
+			imshow( "circles", img );
+			waitKey(1);
+		}
+	}
+	
 };
