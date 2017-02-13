@@ -202,7 +202,7 @@ def main():
             sm.client.wait_for_result()
 		
 	    state_topic = 6 
-	    MoveToValve False
+	    MoveToValve= False
 
 
 
