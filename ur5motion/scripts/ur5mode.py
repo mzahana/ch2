@@ -13,13 +13,13 @@ from sensor_msgs.msg import *
 from actionlib_msgs.msg import *
 from math import *
 
-import ur5LibWayPoints
-ur5LibWayPoints.setParams()
+import ur5libmode
+ur5libmode.setParams()
 
 # dummy = rospy.wait_for_message('/joint_states',JointState)
 
 #State publisher [Ready pos=1, Crawling = --, Aligned = --, BackPlane = 2, MovedToTool = 5, .... = 6, ]
-ur_mode_pub = rospy.Publisher('/mode_ur_main', Int16, queue_size=10)
+ur_mode_pub = rospy.Publisher('/mode_u_main', Int16, queue_size=10)
 
 def main():
 
@@ -27,7 +27,7 @@ def main():
 
     rospy.init_node('alpha', anonymous=True)
 
-    sm = ur5LibWayPoints.ur5Class()
+    sm = ur5libmode.ur5Class()
 
     print "Waiting for actionLib server..."
     sm.client.wait_for_server()
