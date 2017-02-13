@@ -15,6 +15,7 @@ from geometry_msgs.msg import *
 from math import *
 
 def setParams():
+	
 
     rospy.set_param('/ur5/onHusky',True)
     rospy.set_param('/ur5/poseWakeup',[0.0,-np.pi/2.0,0.0,-np.pi/2.0,0.0,0.0])
