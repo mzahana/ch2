@@ -3,7 +3,8 @@
 #include <stdio.h>
 #include <fstream>
 #include "geometry_msgs/Twist.h"
-#include "std_msgs/int16.h"
+#include "std_msgs/int32.h"
+#include "std_msgs/Int32MultiArray.h"
 
 using namespace std;
 using namespace cv;
@@ -13,36 +14,36 @@ class ModeSelect
 {
 public:
 	//Global variables
-	int16 modeNo, mode_Husky, mode_UR, mode_Viz; //Subscribed modes
-	std_msgs::int16 M_h, M_u, M_v, M_g; //Published modes (Default vals)
-	vector<int> mode_general;
+	int32 modeNo, mode_Husky, mode_UR, mode_Viz; //Subscribed modes
+	std_msgs::int32 M_h, M_u, M_v, M_g; //Published modes (Default vals)
+	vector<int> mode_Cmd;
 	
 	//Constructor
-	ModeSelect(){
+	ModeSelect(int m0, int m1, int m2, int m3){
 		//Initialize all mode vars
-		mode_Husky = 0; mode_UR = 0; mode_Viz = 0; mode_Grip = 0;
+		mode_Husky = m0; mode_UR = m1; mode_Viz = m2; mode_Grip = m3;
 		M_h = 0; M_u = 0; M_v = 0; M_g = 0;
 	};
 	
 	
 	//Husky current mode callback
-	void mode_Husky_Cb(const std_msgs::int16& mode_Hcur){
-		mode_Husky = mode_Hcur;
+	void mode_Husky_Cb(const std_msgs::int32& mode_Hcur){
+		int mode_Husky = mode_Hcur;
 		//cout << "Mode Husky: " << mode_Husky << endl;
 	}
 	//UR5 current mode callback
-	void mode_UR_Cb(const std_msgs::int16& mode_URcur){
-		mode_UR = mode_URcur;
+	void mode_UR_Cb(const std_msgs::int32& mode_URcur){
+		int mode_UR = mode_URcur;
 		//cout << "Mode UR: " << mode_UR << endl;
 	}
 	//Vision current mode callback
-	void mode_Viz_Cb(const std_msgs::int16& mode_Viscur){
-		mode_Viz = mode_Viscur;
+	void mode_Viz_Cb(const std_msgs::int32& mode_Viscur){
+		int mode_Viz = mode_Viscur;
 		//cout << "Mode Vision: " << mode_Viz << endl;
 	}
 	//Gripper current mode callback
-	void mode_Grip_Cb(const std_msgs::int16& mode_Gripcur){
-		mode_Grip = mode_Gripcur;
+	void mode_Grip_Cb(const std_msgs::int32& mode_Gripcur){
+		int mode_Grip = mode_Gripcur;
 		//cout << "Mode Grip: " << mode_Grip << endl;
 	}
 	
@@ -144,11 +145,11 @@ public:
 		}
 		
 		//Collect mode info in an array to publish
-		mode_general[0] = mode_Husky;
-		mode_general[1] = mode_UR;
-		mode_general[2] = mode_Viz;
-		mode_general[3] = mode_Grip;
-		ros::Duration(0.1).sleep(); // sleep for some time
-		return mode_general;
+		mode_Cmd[0] = M_h;
+		mode_Cmd[1] = M_u;
+		mode_Cmd[2] = M_v;
+		mode_Cmd[3] = M_g;
+		ros::Duration(0.02).sleep(); // sleep for some time
+		return mode_Cmd;
 	}
 };
