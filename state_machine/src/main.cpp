@@ -4,7 +4,7 @@
 #include <fstream>
 #include "geometry_msgs/Twist.h"
 #include <sensor_msgs/image_encodings.h>
-#include "std_msgs/int32.h"
+#include "std_msgs/Int32.h"
 #include "std_msgs/Int32MultiArray.h"
 //OpenCV related classes
 #include <image_transport/image_transport.h>
@@ -15,9 +15,6 @@
 #include "opencv2/imgproc/imgproc.hpp"
 //Vision classes
 #include "ModeSelect.cpp"
-#include "CascadeDet.cpp"
-#include "ValveDet.cpp"
-
 
 using namespace std;
 using namespace cv;
@@ -33,50 +30,49 @@ int main(int argc, char **argv)
 	//Mode select class
 	//Manages current mode based on state/information flow
 	//Initialize with desired system state
-	ModeSelect modeObj ( 0 , 0 , 0 , 0 );
-	std_msgs::Int32MultiArray mode_State;
+	ModeSelect modeObj ( 10 , 0 , 5 , 0 );
 	
 	//Define objects
-	HuskyLibrary huskyObj;
-	UrLibrary urObj;
-	VizLibrary visionObj;
-	GripLibrary gripperObj;
+	//HuskyLibrary huskyObj;
+	//GripLibrary gripperObj;
 	
 	//Subscribe
-	ros::Subscriber sub_H_mode = node_Sm.subscribe<std_msgs::Int32>("mode_h_main", 1000, &ModeSelect::mode_Husky_Cb, &huskyObj);
-	ros::Subscriber sub_U_mode = node_Sm.subscribe<std_msgs::Int32>("mode_u_main", 1000, &ModeSelect::mode_UR_Cb, &urObj);
-	ros::Subscriber sub_V_mode = node_Sm.subscribe<std_msgs::Int32>("mode_v_main", 1000, &ModeSelect::mode_Viz_Cb, &visionObj);
-	ros::Subscriber sub_G_mode = node_Sm.subscribe<std_msgs::Int32>("mode_g_main", 1000, &ModeSelect::mode_Grip_Cb, &gripperObj);
+	//ros::Subscriber sub_H_mode = node_Sm.subscribe<std_msgs::Int32>("mode_h_main", 1000, &ModeSelect::mode_Husky_Cb, &odeObj);
+	ros::Subscriber sub_U_mode = node_Sm.subscribe<std_msgs::Int32>("mode_u_main", 1000, &ModeSelect::mode_UR_Cb, &modeObj);
+	ros::Subscriber sub_V_mode = node_Sm.subscribe<std_msgs::Int32>("mode_v_main", 1000, &ModeSelect::mode_Viz_Cb, &modeObj);
+	//ros::Subscriber sub_G_mode = node_Sm.subscribe<std_msgs::Int32>("mode_g_main", 1000, &ModeSelect::mode_Grip_Cb, &modeObj);
 	
 	
-    //Publish
-	ros::Publisher pub_mode = node_Sm.advertise<std_msgs::Int32MultiArray>("mode_system", 1000);
+	//Publish
+	//Commanded modes
+	ros::Publisher pub_modeHusky = node_Sm.advertise<std_msgs::Int32>("cmdmode_husky", 1000);
+	ros::Publisher pub_modeUr = node_Sm.advertise<std_msgs::Int32>("cmdmode_ur", 1000);
+	ros::Publisher pub_modeViz = node_Sm.advertise<std_msgs::Int32>("cmdmode_viz", 1000);
+	ros::Publisher pub_modeGrip = node_Sm.advertise<std_msgs::Int32>("cmdmode_grip", 1000);
     
 
 	ros::Rate r(20);
 	while(ros::ok())
 	{
-		//Get current system mode
-		mode_State.clear(); //Clear array before filling
-		mode_State[0] = modeObj.mode_Husky;
-		mode_State[1] = modeObj.mode_UR;
-		mode_State[2] = modeObj.mode_Viz;
-		mode_State[3] = modeObj.mode_Grip;
+		//Run the modeSwitch fcn
+		modeObj.modeSwitch();
 		
 		//Publish the commanded system mode
-		mode_Cmd = modeObj.modeSwitch(modeObj.mode_Husky, modeObj.mode_UR, modeObj.mode_Viz, modeObj.mode_Grip);
-		pub_mode.publish(modeObj.mode_Cmd);
+		pub_modeHusky.publish(modeObj.M_h);
+		pub_modeUr.publish(modeObj.M_u);
+		pub_modeViz.publish(modeObj.M_v);
+		pub_modeGrip.publish(modeObj.M_g);
 
 		//Show system state
-        cout << "MAIN: System state: H[" << mode_State[0] << "], U[" << mode_State[1] << "], V[" << mode_State[2] << "], G[" << mode_State[3] << "]" << endl;
-		
+		cout << "MAIN: System state: H[" << modeObj.mode_Husky << "], U[" << modeObj.mode_UR << "], V[" << modeObj.mode_Viz << "], G[" << modeObj.mode_Grip << "]" << endl;
+		cout << "MAIN: System cmd: H[" << modeObj.M_h << "] - U[" << modeObj.M_u << "] - V[" << modeObj.M_v << "] - G[" << modeObj.M_g << "]" << endl;
+		cout << endl;
+
 		//Spin and sleep
-        ros::spinOnce();
+		ros::spinOnce();
 		r.sleep();
 	}
-
-	cv::destroyAllWindows();
-	//Delete the NN pointer
-	delete visionObj.nnetwork;
+	
 	ROS_INFO("State_machine::main.cpp::Finished with no error.");
+	return 0;
 }

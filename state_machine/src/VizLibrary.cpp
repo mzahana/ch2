@@ -7,10 +7,12 @@
 #include <iostream>
 #include <stdio.h>
 #include <fstream>
+#include <vector>
 #include <geometry_msgs/Twist.h>
 #include <boost/lexical_cast.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/types_c.h>
+#include <sensor_msgs/JointState.h>
 
 
 using namespace std;
@@ -26,8 +28,9 @@ public:
 	vector<Rect> tools_Ordered; //Vector to store ascending ordered tools (order of initial x)
 	double rect_Overlap_rat;
 	int cascade_Count;
+	int mode_V_cmd;
 	//Joint pose
-	vector<double> joint_Pos(6,0);
+	vector<double> joint_Pos;
 	
 	//Neural net vars
 	CvANN_MLP* nnetwork;
@@ -43,6 +46,9 @@ public:
 	vector<int> tools_Sep;
 	int sep_Pixel_min, sep_Pixel_max;
 	
+	//Circle detection vars
+	circle_Thres = 2;
+	
 	
 	//Publish vars (automatically initializes with zero vals)
 	geometry_msgs::Twist xyzPxMsg;
@@ -52,26 +58,28 @@ public:
 	//Constructor
 	VizLibrary(){
 		//Load the cascade classifier
-		cascade_name = "/home/risc/catkin_ws/src/husky_vision/src/rexmlfiles/toolDetector5_1(3).xml";
+		cascade_name = "/home/risc/catkin_ws/src/smachine/src/rexmlfiles/toolDetector6_1(1).xml";
 		if( !casClassifier.load( cascade_name ) ){ printf("--(!)Error loading xml file\n"); };
 		//Parameter initializations
-		min_L = 30, min_W = 30;
-		no_of_in_layers = 18; no_of_hid_layers = 36; no_of_out_layers = 1;
+		min_L = 36, min_W = 36;
+		no_of_in_layers = 27; no_of_hid_layers = 27; no_of_out_layers = 1;
 		layers = (Mat_<int>(1,3) << no_of_in_layers,no_of_hid_layers,no_of_out_layers);
 		rect_Overlap_rat = 0.3;
+		for (int i = 0; i < joint_Pos.size(); i++){ joint_Pos[i] = 0; }
 		//Separation check vars: Set based on distance from panel
 		sep_Pixel_min = 40;
 		sep_Pixel_max = 150;
 		//Cascade detection number of successful 6-tool-validation
 		cascade_Count = 0;
+		//Mode vars
+		//mode_V_cmd = 0;
 	}
 	
 	
 	//Vision mode callback
-	void modeCb(const std_msgs::Int32MultiArray::ConstPtr& msgMode)
+	void modeCb(const std_msgs::Int32::ConstPtr& msgMode)
 	{
-		vector<int> mode_system = msgMode -> data;
-		int mode_V_cmd = mode_system[2];
+		int mode_V_cmd = msgMode -> data;
 	}
 	
 	
@@ -97,7 +105,7 @@ public:
 			return;
 		}
 		frame = cv_ptr -> image;
-		//cvtColor( cv_ptr -> image, frame_gray, COLOR_BGR2GRAY );
+		cvtColor( cv_ptr -> image, frame_gray, COLOR_BGR2GRAY );
 	}
 
 	
@@ -112,7 +120,11 @@ public:
 				return 0;
 			} else {
 				cout << "Number of tools validated: [" << tools_Ordered.size() << "]" << endl;
-				cascade_Count++; 
+
+				//For mode 2, publish the pixel differences
+				xyzPxMsg.linear.y = tools_Ordered[0].x - ceil(frame.cols/2);
+				xyzPxMsg.linear.z = -( tools_Ordered[0].y - ceil(frame.rows/2) );
+				cascade_Count++;
 				return 1;
 			}
 		} else {
@@ -123,7 +135,7 @@ public:
 	
 	
 	//NN train functions
-	void trainNN(){
+	int trainNN(){
 		readDataFiles();
 		nnetwork = new (nothrow) CvANN_MLP;
 		if (nnetwork == nullptr) {
@@ -148,6 +160,12 @@ public:
 		//Train
 		nnetwork -> train(nnInput_Data_mat, nnTrain_out, Mat(), Mat(), paramsNN);
 		cout << "VIZ: NN trained" << endl;
+		return 0;
+	}
+
+	//Declare
+	void detect_circlePub(){
+		detect_circle(frame, frame_gray);
 	}
 
 
@@ -171,7 +189,7 @@ private:
 	    //equalizeHist( frame_gray, frame_gray );
 
 	    //-- Detect tools
-	    casClassifier.detectMultiScale( frame_gray, tools, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
+	    casClassifier.detectMultiScale( frame_gray, tools, 1.005, 5, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
 
 	    for( size_t i = 0; i < tools.size(); i++ ){
 	  	    rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(255,0,0), 2); 
@@ -337,7 +355,7 @@ private:
 		for (int i = 0; i < tools_Ordered.size()-1; i++) {
 			tools_Sep.push_back( tools_Ordered[i+1].x - tools_Ordered[i].x );
 			if ( (tools_Sep.back() < sep_Pixel_min) || (tools_Sep.back() > sep_Pixel_max)) {
-				cout << "Separation of tool [" << i << "] = " << tools_Sep.back() << endl;
+				cout << "VIZ: Separation Test: Distance of tool [" << i << "," << i+1 <<"] = " << tools_Sep.back() << endl;
 				return 0;
 			}
 		}
@@ -347,30 +365,42 @@ private:
 	/***************/
 	//Hough circle detection
 	void detect_circle(Mat img, Mat gray){
+		//Function vars
+		vector<double> radius_Valve;
 		//Check if the frame is empty
-		if (frame.empty() == 0) {
+		if (img.empty() == 0) {
 			//Blur the image to reduce false detections
 			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );
 			//Vector of 3D vectors to store circles
 			vector<Vec3f> circles;
+			Vec3f valve_Circle;
 			//Hough circles detection
 			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, img.rows/4, 200, 100 );
-			
+			//For each circle, draw circle on the image
 			for( size_t i = 0; i < circles.size(); i++ )
 			{
 				Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
-				radiusValve = cvRound(circles[i][2]);
+				radius.push_back( cvRound(circles[i][2]) );
 				// draw the circle center
 				circle( img, center, 3, Scalar(0,255,0), -1, 8, 0 );
 				// draw the circle outline
 				circle( img, center, radiusValve, Scalar(0,0,255), 3, 8, 0 );
-				//Calculate distance between the first circle center and image center
-				//and publish
-				if (i == 0) {
-					xyzPxMsg.linear.x = center.x - ceil(img.cols/2);
-					xyzPxMsg.linear.y = center.y - ceil(img.rows/2);
+				//If more than one circle detected, take the biggest circle
+				if ( ( radius.back() >= radius(radius.size()-1) ) && (i > 0) ) {
+					valve_Circle = circles[i];
+					Point center_Valve(cvRound(valve_Circle[i][0]), cvRound(valve_Circle[i][1]));
+					radius_Valve = cvRound(valve_Circle[i][2]);
 				}
 			}
+			//Calculate distance between the first circle center and image center and publish
+			if ( valve_Circle.empty() == 0 ) {
+				xyzPxMsg.linear.y = center.x - ceil(img.cols/2);
+				xyzPxMsg.linear.z = -(center.y - ceil(img.rows/2));
+			}
+			//Clear the radiusValve vector
+			radius.clear();
+			
+			cout << "Biggest circle radius: " << radius_Valve << endl;
 			//Show the image with circles
 			imshow( "circles", img );
 			waitKey(1);
@@ -381,7 +411,7 @@ private:
 	/***************/
 	//Read data csv files
 	void readDataFiles() {
-		std::ifstream ifs1 ("/home/risc/catkin_ws/src/husky_vision/src/rexmlfiles/data_mean.csv", ifstream::in);
+		std::ifstream ifs1 ("/home/risc/catkin_ws/src/smachine/src/rexmlfiles/data_mean.csv", ifstream::in);
 		while (ifs1.good()) {
 			getline(ifs1,data_mean);
 			std::stringstream sstrm1(data_mean);
@@ -394,7 +424,7 @@ private:
 		
 		
 		/////////////////////////
-		std::ifstream ifs11 ("/home/risc/catkin_ws/src/husky_vision/src/rexmlfiles/PCe.csv", ifstream::in);
+		std::ifstream ifs11 ("/home/risc/catkin_ws/src/smachine/src/rexmlfiles/PCe.csv", ifstream::in);
 		string current_line;
 		vector< vector<double> > all_data;
 		while (getline(ifs11,current_line)) {
@@ -420,7 +450,7 @@ private:
 		}
 		
 		
-		std::ifstream ifs20 ("/home/risc/catkin_ws/src/husky_vision/src/rexmlfiles/w.csv", ifstream::in);
+		std::ifstream ifs20 ("/home/risc/catkin_ws/src/smachine/src/rexmlfiles/w.csv", ifstream::in);
 		vector<vector<double> > all_data2;
 		while (getline(ifs20,current_line)) {
 			vector<double> values;
@@ -445,7 +475,7 @@ private:
 		//////////////////////////////////////
 		
 		
-		std::ifstream  ifs4 ("/home/risc/catkin_ws/src/husky_vision/src/rexmlfiles/t.csv", ifstream::in);
+		std::ifstream  ifs4 ("/home/risc/catkin_ws/src/smachine/src/rexmlfiles/t.csv", ifstream::in);
 		while (ifs4.good()) {
 			getline(ifs4,nn_Output);
 			std::stringstream sstrm4(nn_Output);

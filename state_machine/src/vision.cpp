@@ -16,9 +16,8 @@
 
 
 //Vision classes
-#include "CascadeDet.cpp"
-#include "ValveDet.cpp"
-//#include "IdentifySize.cpp"
+#include "VizLibrary.cpp"
+#include "IdentifySize.cpp"
 
 
 using namespace std;
@@ -41,9 +40,6 @@ int main(int argc, char **argv)
 	/*
 	//Mode select class object
 	//Manages current mode based on state/information flow
-	ModeSelect modeObj;
-	std_msgs::Int16MultiArray mode_State;
-
 	//Size identification object
 	IdentifySize identObj;
 
@@ -57,54 +53,76 @@ int main(int argc, char **argv)
 	//SUBSCRIBE
 	//Image transport object
 	image_transport::ImageTransport it(node_Viz);
-	image_transport::Subscriber sub = it.subscribe("usb_cam/image_raw", 1, &CascadeDet::imageCallback, &cascadeObj);
+	image_transport::Subscriber sub = it.subscribe("usb_cam/image_rect_color", 1, &VizLibrary::imageCallback, &vizlibObj);
 	//System mode
-	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::Int32MultiArray>("mode_system", 100, modeCb);
+	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::Int32MultiArray>("mode_system", 100, &VizLibrary::modeCb, &vizlibObj);
 	//Subscribe to joint_states to record in Mode 2
-	ros::Subscriber sub_joints = node_Viz.subscribe<sensor_msgs::JointState>("joint_states", 100, jointCallback);
+	ros::Subscriber sub_joints = node_Viz.subscribe<sensor_msgs::JointState>("joint_states", 100,  &VizLibrary::jointCallback, &vizlibObj);
 	
 	
 	//PUBLISH
 	//Current vision mode
 	ros::Publisher pub_v_mode = node_Viz.advertise<std_msgs::Int32>("mode_v_main",100);
-	//Center of six tools detected (used in Mode 2)
-	ros::Publisher pub_v_center = node_Viz.advertise<geometry_msgs::Twist>("viz_tool_center",100);
+	//Pixel difference publisher
+	ros::Publisher pub_v_pixel = node_Viz.advertise<geometry_msgs::Twist>("pixel_difference",100);
 	
 	
 	//Main Loop
 	ros::Rate r(5);
 	while(ros::ok())
 	{
-		switch (mode_V_cmd) {
+		switch (vizlibObj.mode_V_cmd) {
 			case 0:
 				//Vision is initializing and awaiting for command
+				mode_Viz.data = 0;
 				cout << "VIZ: Waiting for the robot..." << endl;
+				break;
 			case 1:
 				//TBA
+				break;
 			case 2:
 				//Run tool detection algo (with validation checks)
-				cascadeObj.detectProcess();
-				//Publish center of 6 tools
-				pub_v_center.publish(tool_center_diff);
-				if ( (tool_center_diff.linear.x <= cen_thres_x) && (tool_center_diff.linear.y <= cen_thres_y) )
-				{
-					mode_Viz = 3; //Send confirmation of center alignment
-				}
+				mode_Viz.data = 2;
+				break;
 				//mode_V_cmd = 3 is never published!
-			case 4:
-				//Tracking mode: Track the leftmost (first) tool
-				//trackObj.();
-				
-				
-			default:
-				//Vision is initializing and awaiting for command
-				cout << "VIZ: No command received!" << endl;
+			case 5:
+				//Circle detection mode: Find and align to the valve
+				vizlibObj.detect_circlePub();
+				pub_v_pixel.publish(vizlibObj.xyzPxMsg);
+				//Send current mode to SM
+				mode_Viz.data = 5;
+				//Check if a circle actually detected
+				if ( vizlibObj.valve_Circle.empty() == 0 ) {
+					//Set "Aligned" if pixel diff. between circle center and image center is less than a threshold
+					if ( (abs(vizlibObj.xyzPxMsg.linear.y) <= vizlibObj.circle_Thres) && (abs(vizlibObj.xyzPxMsg.linear.z) <= vizlibObj.circle_Thres) ) {
+						cout << "Valve center aligned to the camera..." << endl;
+						mode_Viz.data = 6;
+						//Kill the circles image
+						destroyWindow("circles");
+					}
+				} else {
+					//Valve not detected. Search for valve with small motions (at certain height)
+					mode_Viz.data = 7;
+				}
+				break;
+			case 6:
+				//Tool detection mode: Detect 6 tools and
+				vizlibObj.detectProcess();
+				//Publish first tools pose difference from the center
+				mode_Viz.data = 6;
+				pub_v_pixel.publish(vizlibObj.xyzPxMsg);
+				if ( (abs(vizlibObj.xyzPxMsg.linear.y) <= vizlibObj.circle_Thres) && (abs(vizlibObj.xyzPxMsg.linear.z) <= vizlibObj.circle_Thres) )
+				{
+					cout << "Tooltip center aligned to the camera..." << endl;
+					mode_Viz.data = 7; //Send confirmation of center alignment
+				}
+				break;
 		}
 		
 		//Publish the current vision mode
 		pub_v_mode.publish(mode_Viz);
 		//Show the current vision mode
-		cout << "VIZ: mode: " << mode_Viz << endl;
+		cout << "VIZ: mode: " << mode_Viz.data << endl;
 		
 		//Spin and sleep
 		ros::spinOnce();
