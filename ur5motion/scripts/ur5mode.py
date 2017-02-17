@@ -19,8 +19,8 @@ ur5libmode.setParams()
 
 # dummy = rospy.wait_for_message('/joint_states',JointState)
 
-ur_mode_pub = rospy.Publisher('/mode_u_main', Int32, queue_size=10)
-ur_task_pub = rospy.Publisher('/task_u_main', String, queue_size=10)
+ur_mode_pub = rospy.Publisher('/mode_u_main', String, queue_size=10)
+ur_task_pub = rospy.Publisher('/task_u_main', Int32, queue_size=10)
 
 def main():
 
