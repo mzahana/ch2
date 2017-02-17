@@ -19,7 +19,7 @@ def setParams():
 
     rospy.set_param('/ur5/onHusky',True)
     rospy.set_param('/ur5/poseWakeup',[0.0,-np.pi/2.0,0.0,-np.pi/2.0,0.0,0.0])
-    rospy.set_param('/ur5/poseReady',[0.0,-0.667*np.pi,0.667*np.pi,-np.pi,-0.50*np.pi,0.0])
+    rospy.set_param('/ur5/poseReady',[0.0,-0.8*np.pi,0.8*np.pi,-np.pi,-0.50*np.pi,np.pi/12])
     rospy.set_param('/ur5/vMax',100.0) # maximum endpoint velocity in mm/s
     rospy.set_param('/ur5/fbRate',20.0)
     rospy.set_param('/ur5/gazeboOrder',[2,1,0,3,4,5]) # order of joints in gazebo sim
@@ -50,18 +50,19 @@ class ur5Class():
         self.pixel_x = 0.0
         self.pixel_y = 0.0
         self.pixel_z = 0.0
+        self.ur_mode = 0
 
 
 
       # Subscribe to state machine modes
-        self.subSm = rospy.Subscriber('/mode_system', Int16MultiArray, self.cbsm)
+        self.subSm = rospy.Subscriber('/cmdmode_ur', String, self.cbsm)
 
 
         # Subscribe to joint positions and velocities
         self.subJoints = rospy.Subscriber('/joint_states', JointState, self.cbJoints)
 
 	   # Subscribe to vision coordinate differences
-        self.subCoord = rospy.Subscriber('/pixelDiff', Twist, self.cbPixel)
+        self.subCoord = rospy.Subscriber('/viz_tool_center', Twist, self.cbPixel)
 
         # Create an actionLib client & message variables
         # Prepare to publish goals
@@ -84,9 +85,8 @@ class ur5Class():
 
     def cbsm(self,msg):
         if not msg == None:
-            self.husky_mode = msg.data[0]
-            self.ur_mode = msg.data[1]
-            self.gripper_mode = msg.data[3]
+            self.ur_mode = msg.data
+            print "ur commanded mode is: ",self.ur_mode 
 
 
  
