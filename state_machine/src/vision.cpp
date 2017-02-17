@@ -37,32 +37,35 @@ int main(int argc, char **argv)
 	vizlibObj.trainNN();
 	vizlibObj.detectProcess();
 	
-	/*
+	
 	//Mode select class object
 	//Manages current mode based on state/information flow
 	//Size identification object
 	IdentifySize identObj;
-
+	
+	/*
 	//Tool tracker object
 	TrackTool trackObj;
 	*/
 	
 	//Variables published
-	std_msgs::Int32 mode_Viz;
+	std_msgs::String mode_Viz;
 	
 	//SUBSCRIBE
 	//Image transport object
 	image_transport::ImageTransport it(node_Viz);
 	image_transport::Subscriber sub = it.subscribe("usb_cam/image_rect_color", 1, &VizLibrary::imageCallback, &vizlibObj);
 	//System mode
-	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::Int32MultiArray>("mode_system", 100, &VizLibrary::modeCb, &vizlibObj);
+	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::String>("cmdmode_v", 100, &VizLibrary::modeCb, &vizlibObj);
 	//Subscribe to joint_states to record in Mode 2
 	ros::Subscriber sub_joints = node_Viz.subscribe<sensor_msgs::JointState>("joint_states", 100,  &VizLibrary::jointCallback, &vizlibObj);
 	
 	
 	//PUBLISH
 	//Current vision mode
-	ros::Publisher pub_v_mode = node_Viz.advertise<std_msgs::Int32>("mode_v_main",100);
+	ros::Publisher pub_v_mode = node_Viz.advertise<std_msgs::String>("mode_v_main",100);
+	//Task finish confirmation mode
+	ros::Publisher pub_v_fin = node_Viz.advertise<std_msgs::Int32>("finished_v",100);
 	//Pixel difference publisher
 	ros::Publisher pub_v_pixel = node_Viz.advertise<geometry_msgs::Twist>("pixel_difference",100);
 	
@@ -71,54 +74,66 @@ int main(int argc, char **argv)
 	ros::Rate r(5);
 	while(ros::ok())
 	{
-		switch (vizlibObj.mode_V_cmd) {
-			case 0:
-				//Vision is initializing and awaiting for command
-				mode_Viz.data = 0;
-				cout << "VIZ: Waiting for the robot..." << endl;
-				break;
-			case 1:
-				//TBA
-				break;
-			case 2:
-				//Run tool detection algo (with validation checks)
-				mode_Viz.data = 2;
-				break;
-				//mode_V_cmd = 3 is never published!
-			case 5:
-				//Circle detection mode: Find and align to the valve
-				vizlibObj.detect_circlePub();
-				pub_v_pixel.publish(vizlibObj.xyzPxMsg);
-				//Send current mode to SM
-				mode_Viz.data = 5;
-				//Check if a circle actually detected
-				if ( vizlibObj.valve_Circle.empty() == 0 ) {
-					//Set "Aligned" if pixel diff. between circle center and image center is less than a threshold
-					if ( (abs(vizlibObj.xyzPxMsg.linear.y) <= vizlibObj.circle_Thres) && (abs(vizlibObj.xyzPxMsg.linear.z) <= vizlibObj.circle_Thres) ) {
-						cout << "Valve center aligned to the camera..." << endl;
-						mode_Viz.data = 6;
-						//Kill the circles image
-						destroyWindow("circles");
-					}
-				} else {
-					//Valve not detected. Search for valve with small motions (at certain height)
-					mode_Viz.data = 7;
+		if (vizlibObj.mode_V_cmd == "Idle") {
+			//Vision is initializing and awaiting for command
+			mode_Viz.data = "Idle";
+			cout << "VIZ: Waiting for the robot..." << endl;
+		} else if (vizlibObj.mode_V_cmd == "Idle") {
+			//Run valve detection algo, if circle found return
+			vizlibObj.detect_circlePub();
+			if ( vizlibObj.valve_Circle.empty() == 0 ) {
+				mode_Viz.data = "valveFound";
+			} else {
+				mode_Viz.data = "valveViz";
+			}
+		} else if (vizlibObj.mode_V_cmd == "valveAlign") {
+			//Run valve detection algo, if circle found return
+			vizlibObj.detect_circlePub();
+			
+			//Align the camera to the valve center
+			if ( vizlibObj.valve_Circle.empty() == 0 ) {
+				//Set "Aligned" if pixel diff. between circle center and image center is less than a threshold
+				if ( (abs(vizlibObj.xyzPxMsg.linear.y) <= vizlibObj.pixelThres) && (abs(vizlibObj.xyzPxMsg.linear.z) <= vizlibObj.pixelThres) ) {
+					cout << "Valve center aligned to the camera..." << endl;
+					//Update the current mode
+					mode_Viz.data = "valveAligned";
+					//Kill the circles image
+					destroyWindow("circles");
 				}
-				break;
-			case 6:
-				//Tool detection mode: Detect 6 tools and
-				vizlibObj.detectProcess();
-				//Publish first tools pose difference from the center
-				mode_Viz.data = 6;
-				pub_v_pixel.publish(vizlibObj.xyzPxMsg);
-				if ( (abs(vizlibObj.xyzPxMsg.linear.y) <= vizlibObj.circle_Thres) && (abs(vizlibObj.xyzPxMsg.linear.z) <= vizlibObj.circle_Thres) )
-				{
-					cout << "Tooltip center aligned to the camera..." << endl;
-					mode_Viz.data = 7; //Send confirmation of center alignment
+			} else {
+				//Valve not detected. Search for valve with small motions (at certain height)
+				mode_Viz.data = "aligningValve";
+			}
+			pub_v_pixel.publish(vizlibObj.xyzPxMsg);
+		} else if (vizlibObj.mode_V_cmd == "detectTools") {
+			//Tool detection mode: Detect 6 tools and if found return
+			int detect_Res = vizlibObj.detectProcess();
+			//Identify sizes if 6 tools are detected and separation test is successful
+			if ( (vizlibObj.tools_Ordered.size() == identObj.noOfTools) && (detect_Res == 1) ) {
+				cout << "VIZ: Identifying sizes..." << endl;
+				//Run the tooltip size identification and check if i_Level = n_Level
+				if (identObj.ident_Current(vizlibObj.tools_Ordered) == identObj.n_Level) {
+					cout << "Smallest tool: " << identObj.idx_SmallestTool << ", Size: " << identObj.smallestToolSize << endl;
 				}
-				break;
+			}
+		} else if (vizlibObj.mode_V_cmd == "alignCorrectTool") {
+			//Arm approached the correct tool, align the camera with the tool
+			int detect_Res = vizlibObj.detectProcess();
+			//If the tool is detected, send the pixel differences to the arm
+			if ( vizlibObj.tools.empty() == 0 ) {
+				//Set "Aligned" if pixel diff. between circle center and image center is less than a threshold
+				if ( (abs(vizlibObj.xyzPxMsg.linear.y) <= vizlibObj.pixelThres) && (abs(vizlibObj.xyzPxMsg.linear.z) <= vizlibObj.pixelThres) ) {
+					cout << "Tool center aligned to the camera..." << endl;
+					//Update the current mode
+					mode_Viz.data = "correctAligned";
+				}
+			}
 		}
 		
+		
+		//Tell SM that vision finished the task
+		finished_V.data = 1;
+		pub_v_fin.publish(finished_V);
 		//Publish the current vision mode
 		pub_v_mode.publish(mode_Viz);
 		//Show the current vision mode

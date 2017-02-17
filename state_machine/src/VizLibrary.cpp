@@ -28,7 +28,7 @@ public:
 	vector<Rect> tools_Ordered; //Vector to store ascending ordered tools (order of initial x)
 	double rect_Overlap_rat;
 	int cascade_Count;
-	int mode_V_cmd;
+	string mode_V_cmd;
 	//Joint pose
 	vector<double> joint_Pos;
 	
@@ -47,7 +47,7 @@ public:
 	int sep_Pixel_min, sep_Pixel_max;
 	
 	//Circle detection vars
-	circle_Thres = 2;
+	pixelThres = 2;
 	
 	
 	//Publish vars (automatically initializes with zero vals)
@@ -71,15 +71,13 @@ public:
 		sep_Pixel_max = 150;
 		//Cascade detection number of successful 6-tool-validation
 		cascade_Count = 0;
-		//Mode vars
-		//mode_V_cmd = 0;
 	}
 	
 	
 	//Vision mode callback
-	void modeCb(const std_msgs::Int32::ConstPtr& msgMode)
+	void modeCb(const std_msgs::String::ConstPtr& msgMode)
 	{
-		int mode_V_cmd = msgMode -> data;
+		mode_V_cmd = msgMode -> data;
 	}
 	
 	
@@ -105,7 +103,7 @@ public:
 			return;
 		}
 		frame = cv_ptr -> image;
-		cvtColor( cv_ptr -> image, frame_gray, COLOR_BGR2GRAY );
+		cvtColor( frame, frame_gray, COLOR_BGR2GRAY );
 	}
 
 	
@@ -120,8 +118,7 @@ public:
 				return 0;
 			} else {
 				cout << "Number of tools validated: [" << tools_Ordered.size() << "]" << endl;
-
-				//For mode 2, publish the pixel differences
+				//Publish the pixel differences
 				xyzPxMsg.linear.y = tools_Ordered[0].x - ceil(frame.cols/2);
 				xyzPxMsg.linear.z = -( tools_Ordered[0].y - ceil(frame.rows/2) );
 				cascade_Count++;
@@ -176,24 +173,46 @@ private:
 	//Detected, validated, overlap checked and sorted tools stored in tools_Ordered public var
 	vector<Rect> detectAndDisplay( Mat _frame )
 	{
+		//NN private parameters
 		Mat toolsCroppedTemp = Mat::zeros(min_W,min_L,CV_8U);
         vector<double> toolsColTemp;
         Mat test_input = Mat::zeros(no_of_in_layers,1,CV_64F);
         Mat test_input_real = Mat::zeros(1,no_of_in_layers,CV_64F);
-
-	    //Mat frame_gray(480,640,CV_8U);
 	    Mat img_Rect = _frame;
 	    Mat nn_Img = _frame;
 
-	    cvtColor( _frame, frame_gray, CV_BGR2GRAY );
-	    //equalizeHist( frame_gray, frame_gray );
-
-	    //-- Detect tools
-	    casClassifier.detectMultiScale( frame_gray, tools, 1.005, 5, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
+	    //Run Cascade to detect tooltips (Phase 1)
+	    casClassifier.detectMultiScale( frame_gray, tools_Phase1, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
+		
+		//Run Cascade inside the detected tooltips (Phase 2)
+		for( size_t i = 0; i < tools_Phase1.size(); i++ ){
+			Mat toolROI = frame_gray( tools_Phase1[i] );
+			casClassifier.detectMultiScale( toolROI, tool_Phase2, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
+			if (tool_Phase2.empty() == 0) {
+				//Calculate the actual tool_Phase2 coordinate
+				tool_Phase2.x += tools_Phase1[i].x;
+				tool_Phase2.y += tools_Phase1[i].y;
+				//Add the accepted tool to tools vector
+				tools.push_back( tool_Phase2 );
+			} else {
+				int idx_Smallest = 0;
+				for( size_t j = 0; j < tool_Phase2.size()-1; j++ ){
+					if (Area_tip[j+1].area <= Area_tip[j].area ) {
+						idx_Smallest = j;
+					}
+				}
+				//Calculate the actual tool_Phase2 coordinate
+				tool_Phase2[idx_Smallest].x += tools_Phase1[i].x;
+				tool_Phase2[idx_Smallest].y += tools_Phase1[i].y;
+				//Add the accepted tool to tools vector
+				tools.push_back( tool_Phase2[idx_Smallest] );
+			}
+		}
+		
 
 	    for( size_t i = 0; i < tools.size(); i++ ){
-	  	    rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(255,0,0), 2); 
-	  	    Mat toolROI = frame_gray( tools[i] );
+			//Draw rectangle around tooltips
+	  	    rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(255,0,0), 2);
 	  	    
 	  	    printf("i = %d\n", (int)i + 1);
 
@@ -206,9 +225,9 @@ private:
 	        		toolsColTemp.push_back((double)toolsCroppedTemp.at<uchar>(k,j));
 	        	}
 	        }
-
+			//Crop the last extra entries of data_mean_vec
 	        data_mean_vec.resize(min_W*min_L);
-
+			//Normalization
 	        for (int i = 0; i < data_mean_vec.size(); i++) {
 	        	toolsColTemp[i] = toolsColTemp[i] - data_mean_vec[i];
 	        }

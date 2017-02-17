@@ -278,7 +278,8 @@ def main():
 
 
 	
-
+finished_U = 1
+	ur_finish_pub.publish(finished_U)
 	ur_mode_pub.publish(state_topic)
 
 

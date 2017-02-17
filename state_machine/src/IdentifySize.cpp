@@ -16,13 +16,17 @@ using namespace cv;
 using namespace Eigen;
 
 
+
+//Find the lengths of detected tools (should be 6) based on pixel diff between tooltip center
 class IdentifySize
 {
 public:
 	vector<int> idx_BW, idx_W, idx_B;
-	int n_Level; //# of detections to store tool tip centers and joint poses
+	int n_Level; //total desired # of detections to store tool tip centers and joint poses
 	vector<double> M_tools_avgY; //Vector to store average lengths of tools (needed outside of this class)
-	int i_Level;
+	int idx_SmallestTool; //Index of the smallest tool
+	double smallestToolSize; //Length of the smallest detected tool
+	int i_Level, noOfTools;
 	MatrixXd M_tools_X; //Matrix to store tools centers X (assuming six tools detected)
 	MatrixXd M_tools_Y; //Matrix to store tools centers Y
 	MatrixXd M_joints; //Matrix to store the joint poses
@@ -31,13 +35,14 @@ public:
 	IdentifySize(){
 		n_Level = 10;
 		i_Level = 1;
-		M_tools_X = MatrixXd::Zero(n_Level,6);
-		M_tools_Y = MatrixXd::Zero(n_Level,6);
-		M_joints = MatrixXd::Zero(n_Level,6);
+		noOfTools = 6;
+		M_tools_X = MatrixXd::Zero(n_Level,noOfTools);
+		M_tools_Y = MatrixXd::Zero(n_Level,noOfTools);
+		M_joints = MatrixXd::Zero(n_Level,noOfTools);
 	}
 	
-	//Method selection function
-	int ident_Current(vector<Rect> tools_Ordered){
+	//Tooltip level find function
+	int ident_Current( vector<Rect> tools_Ordered ){
 		vector<Rect> tools_Level = tools_Ordered;
 		int level_Count = findLevels(tools_Level);
 		if (level_Count == n_Level)
@@ -48,6 +53,7 @@ public:
 		}
 	}
 	
+	//Tooltip filter function
 	int filterImg(Mat img_gray, Mat img_color){
 		if (img_gray.empty() == 0) {
 			filterTool(img_gray, img_color);
@@ -64,24 +70,33 @@ private:
 	//Store the detected centers and joint positions for n_Level # of frames
 	int findLevels(vector<Rect> tools_Level){
 		//Store the values
-		for (int j = 0; j < 6; j++) {
+		for (int j = 0; j < noOfTools; j++) {
 			M_tools_X (i_Level-1,j) = tools_Level[j].x + 0.5*tools_Level[j].width;
 			M_tools_Y (i_Level-1,j) = tools_Level[j].y + 0.5*tools_Level[j].height;
 		}
-		cout << "j: " << M_tools_Y << endl;
-		//M_joints.row(i_Level) << joint_Pose[0], joint_Pose[1], joint_Pose[2], joint_Pose[3], joint_Pose[4], joint_Pose[5];
-		M_joints.row(i_Level) << 0, 0, 0, 0, 0, 0;
+		cout << "VIZ: Tooltip center heights: " << M_tools_Y << endl;
+		M_joints.row(i_Level) << joint_Pose[0], joint_Pose[1], joint_Pose[2], joint_Pose[3], joint_Pose[4], joint_Pose[5];
 		
-		//If i_Level = n_Level, calculate y-axis sizes and order
+		//If i_Level = n_Level, calculate y-axis lengths and order
 		if (i_Level == n_Level) {
-			for (int j = 0; j < 6; j++) {
+			for (int j = 0; j < noOfTools; j++) {
 				double M_Ysum = 0;
 				for (int i = 0; i < n_Level; i++){ M_Ysum = M_Ysum + M_tools_Y (i,j); }
 				M_tools_avgY.push_back( M_Ysum/((double)n_Level) ); //Length of the jth tool's center (robot z-axis)
 			}
 			//Show the tools lengths (the order is the same as of tools_Ordered)
-			for (int i = 0; i < 6; i++)	{
-				cout << M_tools_avgY[i] << endl;
+			for (int i = 0; i < noOfTools; i++)	{
+				cout << "VIZ: Tooltip center heights: " << endl;
+				cout << "[" << i << "] : " << M_tools_avgY[i] << endl;
+			}
+			//Find and show the smallest tool
+			smallestToolSize = M_tools_avgY[0];
+			idx_SmallestTool = 0;
+			for (int i = 0; i < noOfTools; i++)	{
+				if (smallestToolSize >= M_tools_avgY[i]) {
+					smallestToolSize = M_tools_avgY[i];
+					idx_SmallestTool = i;
+				}
 			}
 		}
 		
@@ -92,7 +107,7 @@ private:
 	}
 	
 	
-	//Geometrical tests
+	//TBA Geometrical tests
 	//Horizontal zone check
 	
 	
