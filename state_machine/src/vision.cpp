@@ -5,7 +5,7 @@
 #include "geometry_msgs/Twist.h"
 #include <sensor_msgs/image_encodings.h>
 #include "std_msgs/Int32.h"
-#include "std_msgs/Int32MultiArray.h"
+#include "std_msgs/String.h"
 //OpenCV related classes
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
@@ -50,6 +50,7 @@ int main(int argc, char **argv)
 	
 	//Variables published
 	std_msgs::String mode_Viz;
+	std_msgs::Int32 finished_V;
 	
 	//SUBSCRIBE
 	//Image transport object
@@ -58,7 +59,7 @@ int main(int argc, char **argv)
 	//System mode
 	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::String>("cmdmode_v", 100, &VizLibrary::modeCb, &vizlibObj);
 	//Subscribe to joint_states to record in Mode 2
-	ros::Subscriber sub_joints = node_Viz.subscribe<sensor_msgs::JointState>("joint_states", 100,  &VizLibrary::jointCallback, &vizlibObj);
+	ros::Subscriber sub_joints = node_Viz.subscribe<sensor_msgs::JointState>("joint_states", 100,  &IdentifySize::jointCallback, &identObj);
 	
 	
 	//PUBLISH
@@ -78,10 +79,10 @@ int main(int argc, char **argv)
 			//Vision is initializing and awaiting for command
 			mode_Viz.data = "Idle";
 			cout << "VIZ: Waiting for the robot..." << endl;
-		} else if (vizlibObj.mode_V_cmd == "Idle") {
+		} else if (vizlibObj.mode_V_cmd == "valveViz") {
 			//Run valve detection algo, if circle found return
 			vizlibObj.detect_circlePub();
-			if ( vizlibObj.valve_Circle.empty() == 0 ) {
+			if ( vizlibObj.circles.empty() == 0 ) {
 				mode_Viz.data = "valveFound";
 			} else {
 				mode_Viz.data = "valveViz";
@@ -91,7 +92,7 @@ int main(int argc, char **argv)
 			vizlibObj.detect_circlePub();
 			
 			//Align the camera to the valve center
-			if ( vizlibObj.valve_Circle.empty() == 0 ) {
+			if ( vizlibObj.circles.empty() == 0 ) {
 				//Set "Aligned" if pixel diff. between circle center and image center is less than a threshold
 				if ( (abs(vizlibObj.xyzPxMsg.linear.y) <= vizlibObj.pixelThres) && (abs(vizlibObj.xyzPxMsg.linear.z) <= vizlibObj.pixelThres) ) {
 					cout << "Valve center aligned to the camera..." << endl;

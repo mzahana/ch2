@@ -13,6 +13,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/types_c.h>
 #include <sensor_msgs/JointState.h>
+#include "std_msgs/String.h"
 
 
 using namespace std;
@@ -24,13 +25,12 @@ public:
 	//Global vars
 	String cascade_name, video_name, window_name, data_mean, pceNN, nnInput_Data, nn_Output;
 	CascadeClassifier casClassifier;
-	vector<Rect> tools, _lasttools, tools_Overlap;
+	vector<Rect> tools, _lasttools, tools_Overlap, tools_Phase1, tool_Phase2;
 	vector<Rect> tools_Ordered; //Vector to store ascending ordered tools (order of initial x)
 	double rect_Overlap_rat;
 	int cascade_Count;
 	string mode_V_cmd;
-	//Joint pose
-	vector<double> joint_Pos;
+	
 	
 	//Neural net vars
 	CvANN_MLP* nnetwork;
@@ -47,7 +47,9 @@ public:
 	int sep_Pixel_min, sep_Pixel_max;
 	
 	//Circle detection vars
-	pixelThres = 2;
+	int pixelThres = 2;
+	//Vector of 3D vectors to store circles
+	vector<Vec3f> circles;
 	
 	
 	//Publish vars (automatically initializes with zero vals)
@@ -58,14 +60,14 @@ public:
 	//Constructor
 	VizLibrary(){
 		//Load the cascade classifier
-		cascade_name = "/home/risc/catkin_ws/src/smachine/src/rexmlfiles/toolDetector6_1(1).xml";
+		cascade_name = "/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/toolDetector6_1(1).xml";
 		if( !casClassifier.load( cascade_name ) ){ printf("--(!)Error loading xml file\n"); };
 		//Parameter initializations
 		min_L = 36, min_W = 36;
 		no_of_in_layers = 27; no_of_hid_layers = 27; no_of_out_layers = 1;
 		layers = (Mat_<int>(1,3) << no_of_in_layers,no_of_hid_layers,no_of_out_layers);
 		rect_Overlap_rat = 0.3;
-		for (int i = 0; i < joint_Pos.size(); i++){ joint_Pos[i] = 0; }
+		
 		//Separation check vars: Set based on distance from panel
 		sep_Pixel_min = 40;
 		sep_Pixel_max = 150;
@@ -80,15 +82,6 @@ public:
 		mode_V_cmd = msgMode -> data;
 	}
 	
-	
-	//Encoder Callback
-	void jointCallback(const sensor_msgs::JointState::ConstPtr& msgJoint)
-	{
-		const vector<string> joint_Names = msgJoint -> name;
-		if (joint_Names[0] == "shoulder_pan_joint") {
-			joint_Pos = msgJoint -> position;
-		}
-	}
 	
 	
 	//Image callback
@@ -190,14 +183,14 @@ private:
 			casClassifier.detectMultiScale( toolROI, tool_Phase2, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
 			if (tool_Phase2.empty() == 0) {
 				//Calculate the actual tool_Phase2 coordinate
-				tool_Phase2.x += tools_Phase1[i].x;
-				tool_Phase2.y += tools_Phase1[i].y;
+				tool_Phase2[i].x += tools_Phase1[i].x;
+				tool_Phase2[i].y += tools_Phase1[i].y;
 				//Add the accepted tool to tools vector
-				tools.push_back( tool_Phase2 );
+				tools.push_back( tool_Phase2[i] );
 			} else {
 				int idx_Smallest = 0;
 				for( size_t j = 0; j < tool_Phase2.size()-1; j++ ){
-					if (Area_tip[j+1].area <= Area_tip[j].area ) {
+					if (tool_Phase2[j+1].area() <= tool_Phase2[j].area() ) {
 						idx_Smallest = j;
 					}
 				}
@@ -385,14 +378,12 @@ private:
 	//Hough circle detection
 	void detect_circle(Mat img, Mat gray){
 		//Function vars
-		vector<double> radius_Valve;
+		vector<double> radius;
+		Point center_Valve;
 		//Check if the frame is empty
 		if (img.empty() == 0) {
 			//Blur the image to reduce false detections
-			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );
-			//Vector of 3D vectors to store circles
-			vector<Vec3f> circles;
-			Vec3f valve_Circle;
+			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );			
 			//Hough circles detection
 			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, img.rows/4, 200, 100 );
 			//For each circle, draw circle on the image
@@ -403,23 +394,23 @@ private:
 				// draw the circle center
 				circle( img, center, 3, Scalar(0,255,0), -1, 8, 0 );
 				// draw the circle outline
-				circle( img, center, radiusValve, Scalar(0,0,255), 3, 8, 0 );
+				circle( img, center, radius.back(), Scalar(0,0,255), 3, 8, 0 );
+				if ( i == 0 ){ center_Valve = center; }
 				//If more than one circle detected, take the biggest circle
-				if ( ( radius.back() >= radius(radius.size()-1) ) && (i > 0) ) {
-					valve_Circle = circles[i];
-					Point center_Valve(cvRound(valve_Circle[i][0]), cvRound(valve_Circle[i][1]));
-					radius_Valve = cvRound(valve_Circle[i][2]);
+				if ( ( radius.back() >= radius[radius.size()-1] ) && (i > 0) ) {
+					center_Valve = center;
+					//radius_Valve.push_back( cvRound(valve_Circle[i][2]) );
 				}
 			}
 			//Calculate distance between the first circle center and image center and publish
-			if ( valve_Circle.empty() == 0 ) {
-				xyzPxMsg.linear.y = center.x - ceil(img.cols/2);
-				xyzPxMsg.linear.z = -(center.y - ceil(img.rows/2));
+			if ( circles.empty() == 0 ) {
+				xyzPxMsg.linear.y = center_Valve.x - ceil(img.cols/2);
+				xyzPxMsg.linear.z = -(center_Valve.y - ceil(img.rows/2));
 			}
 			//Clear the radiusValve vector
 			radius.clear();
 			
-			cout << "Biggest circle radius: " << radius_Valve << endl;
+			//cout << "Biggest circle radius: " << radius_Valve << endl;
 			//Show the image with circles
 			imshow( "circles", img );
 			waitKey(1);
@@ -430,7 +421,7 @@ private:
 	/***************/
 	//Read data csv files
 	void readDataFiles() {
-		std::ifstream ifs1 ("/home/risc/catkin_ws/src/smachine/src/rexmlfiles/data_mean.csv", ifstream::in);
+		std::ifstream ifs1 ("/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/data_mean.csv", ifstream::in);
 		while (ifs1.good()) {
 			getline(ifs1,data_mean);
 			std::stringstream sstrm1(data_mean);
@@ -443,7 +434,7 @@ private:
 		
 		
 		/////////////////////////
-		std::ifstream ifs11 ("/home/risc/catkin_ws/src/smachine/src/rexmlfiles/PCe.csv", ifstream::in);
+		std::ifstream ifs11 ("/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/PCe.csv", ifstream::in);
 		string current_line;
 		vector< vector<double> > all_data;
 		while (getline(ifs11,current_line)) {
@@ -469,7 +460,7 @@ private:
 		}
 		
 		
-		std::ifstream ifs20 ("/home/risc/catkin_ws/src/smachine/src/rexmlfiles/w.csv", ifstream::in);
+		std::ifstream ifs20 ("/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/w.csv", ifstream::in);
 		vector<vector<double> > all_data2;
 		while (getline(ifs20,current_line)) {
 			vector<double> values;
@@ -494,7 +485,7 @@ private:
 		//////////////////////////////////////
 		
 		
-		std::ifstream  ifs4 ("/home/risc/catkin_ws/src/smachine/src/rexmlfiles/t.csv", ifstream::in);
+		std::ifstream  ifs4 ("/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/t.csv", ifstream::in);
 		while (ifs4.good()) {
 			getline(ifs4,nn_Output);
 			std::stringstream sstrm4(nn_Output);

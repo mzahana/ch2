@@ -30,6 +30,9 @@ public:
 	MatrixXd M_tools_X; //Matrix to store tools centers X (assuming six tools detected)
 	MatrixXd M_tools_Y; //Matrix to store tools centers Y
 	MatrixXd M_joints; //Matrix to store the joint poses
+	//Joint pose
+	vector<double> joint_Pose;
+
 	
 	//Constructor
 	IdentifySize(){
@@ -39,6 +42,8 @@ public:
 		M_tools_X = MatrixXd::Zero(n_Level,noOfTools);
 		M_tools_Y = MatrixXd::Zero(n_Level,noOfTools);
 		M_joints = MatrixXd::Zero(n_Level,noOfTools);
+		//Initialize the joint poses
+		for (int i = 0; i < joint_Pose.size(); i++){ joint_Pose[i] = 0; }
 	}
 	
 	//Tooltip level find function
@@ -64,6 +69,20 @@ public:
 			return -1;
 		}
 	}
+
+
+
+	
+	//Encoder Callback
+	void jointCallback(const sensor_msgs::JointState::ConstPtr& msgJoint)
+	{
+		const vector<string> joint_Names = msgJoint -> name;
+		if (joint_Names[0] == "shoulder_pan_joint") {
+			joint_Pose = msgJoint -> position;
+		}
+	}
+
+
 	
 private:
 	//Finds the vertical levels of tooltip centers
