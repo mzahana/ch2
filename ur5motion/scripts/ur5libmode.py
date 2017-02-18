@@ -51,18 +51,24 @@ class ur5Class():
         self.pixel_y = 0.0
         self.pixel_z = 0.0
         self.ur_mode = 0
+	self.PinNumber =3
+	self.ToolSize =22
+
 
 
 
       # Subscribe to state machine modes
         self.subSm = rospy.Subscriber('/cmdmode_ur', String, self.cbsm)
+	self.subPinNumber = rospy.Subscriber('/pin_number', Int32, self.cbpin)
+	self.subPinNumber = rospy.Subscriber('/valve_size', Int32, self.cbvs)
+
 
 
         # Subscribe to joint positions and velocities
         self.subJoints = rospy.Subscriber('/joint_states', JointState, self.cbJoints)
 
 	   # Subscribe to vision coordinate differences
-        self.subCoord = rospy.Subscriber('/viz_tool_center', Twist, self.cbPixel)
+        self.subCoord = rospy.Subscriber('/pixel_difference', Twist, self.cbPixel)
 
         # Create an actionLib client & message variables
         # Prepare to publish goals
@@ -87,6 +93,22 @@ class ur5Class():
         if not msg == None:
             self.ur_mode = msg.data
             print "ur commanded mode is: ",self.ur_mode 
+
+
+
+
+    def cbpin(self,msg):
+        if not msg == None:
+            self.PinNumber = msg.data
+            print "The tool in Pin number : ", self.PinNumber
+
+    def cbvs(self,msg):
+        if not msg == None:
+            self.ToolSize= msg.data
+            print "The tool size : ", self.ToolSize
+
+
+
 
 
  
