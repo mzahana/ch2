@@ -66,6 +66,12 @@ class ur5Class():
 
         # Subscribe to joint positions and velocities
         self.subJoints = rospy.Subscriber('/joint_states', JointState, self.cbJoints)
+	
+	
+	
+        # Subscribe to force torque sensor 
+        self.subFT = rospy.Subscriber('/robotiq_force_torque_wrench', WrenchStamped, self.cbft)
+
 
 	   # Subscribe to vision coordinate differences
         self.subCoord = rospy.Subscriber('/pixel_difference', Twist, self.cbPixel)
@@ -108,6 +114,16 @@ class ur5Class():
             print "The tool size : ", self.ToolSize
 
 
+
+
+    def cbft(self,msg):
+        if not msg == None:
+            self.xForce= msg.wrench.force.x
+            self.yForce= msg.wrench.force.y
+            self.zForce= msg.wrench.force.z
+            self.xTorque= msg.wrench.torque.x
+            self.yTorque= msg.wrench.torque.y
+            self.zTorque= msg.wrench.torque.z     
 
 
 
