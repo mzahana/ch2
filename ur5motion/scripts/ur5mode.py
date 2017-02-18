@@ -19,8 +19,8 @@ ur5libmode.setParams()
 
 # dummy = rospy.wait_for_message('/joint_states',JointState)
 
-ur_mode_pub = rospy.Publisher('/mode_u_main', String, queue_size=10)
-ur_task_pub = rospy.Publisher('/task_u_main', Int32, queue_size=10)
+ur_mode_pub = rospy.Publisher('/mode_u_main', String , queue_size=10)
+ur_task_pub = rospy.Publisher('/task_u_main',Int32 , queue_size=10)
 
 def main():
 
@@ -43,10 +43,10 @@ def main():
     if rospy.get_param('/ur5/onHusky'):
 	dwellTime   	       = 15.0
 	velocity  	       = 15.0
-	velCmd      	       = 12.0
+	velCmd      	       = 15.0
 	degShift   	       = 0.25
-	xBackBlane             = 250.0
-	yBackBlane             = -150.0
+	xBackPlane             = 250.0
+	yBackPlane             = -150.0
 
 	xValveToTools	       = 0.0
 	yValveToTools	       = 450.0
@@ -64,16 +64,16 @@ def main():
 	zTOvalve	      = 0.0
 	
 	
-	GripperLen	      = 190.0
-	Margin		      = 50.0
+	GripperLen	      = 180.0
+	Margin		      = 70.0
 	PinNumber             = 0
 	ToolNumber            = 0
 
 
 	time.sleep(1.0)
 	
-	state_topic           = 0
-    
+	state_topic           ="Idle"
+	task_topic           = 0    
 
     # Initialize logical variables
     Crawling 	     	= True
@@ -84,7 +84,7 @@ def main():
     Approching          = True
     Intitial		= True
     Scaning             = 1
-    GoGripping 		= "Running"
+    GoGripping 		= True
 
     while not rospy.is_shutdown():
 ###################################################
@@ -101,7 +101,12 @@ def main():
 			state_topic = "Ready" 
 			sm.jointGoto(rospy.get_param('/ur5/poseReady'),dwellTime)
 			time.sleep(dwellTime)
+
 			sm.client.wait_for_result()
+
+			flag = sm.xyzShift(-180, 0.0, 0.0, 0.5*velCmd)
+			sm.client.wait_for_result()
+
 			Intitial=False
 		if Crawling: # CRAWL MODE
 		    Aligned = False
@@ -109,7 +114,7 @@ def main():
 		    print "Current: ", x, y, z
 		    Arrived = False
 		    while not Arrived:
-		        flag = sm.xyzShift(-1.0, 0.0, 0.0, velCmd)
+		        flag = sm.xyzShift(-2, 0.0, 0.0, velCmd)
 		        time.sleep(0.2)
 		        sm.client.wait_for_result()
 		        if sm.anyButton():
@@ -152,11 +157,12 @@ def main():
 		            flag = sm.xyzShift(10.0, 0.0, 0.0, velCmd)
 		            sm.client.wait_for_result()
 		            
-		elif Aligned and  BackPlane and sm.ur_mode==1:  #Aligned; Switch to search mode
+		elif Aligned and  BackPlane and sm.ur_mode=="Ready":  #Aligned; Switch to search mode
 		    print "ARM: Moving back: [x,y,z] = [200,0,0]"
-		    flag = sm.xyzShift(xBackPlane,0, 0.0, velCmd)
-
+		    flag = sm.xyzShift(200.0,0.0, 0.0, velCmd)
+		    
 		    sm.client.wait_for_result()
+		    print "I am in BackPlane"
 		    flag = sm.xyzShift(0.0, 0.0, 150.0, velCmd)
 		    sm.client.wait_for_result()
     		    state_topic = "urAligned"
@@ -175,39 +181,44 @@ def main():
 ##########  Mode : search for Valve       ##########
 ###################################################
 	           
+
 	elif  sm.ur_mode=="searchValve":
+		print "I am in searchVave"
 		xCur,yCur,zCur= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
-		xCmd = xCur+100+GripperLen+2*Margin 
-		zCmd = 975-360
+		xCmd =xCur #xTouch+100+Margin 
+		print xCmd
+		zCmd = 975.0-360.0-70.0
 		if ( countSearchValve == 0):
-			yCmd = yCur-10
+			yCmd = yCur-10.0
 				
 		else:
-			yCmd = yCur+10
+			yCmd = yCur+10.0
 			
 			
 			
 	
-		flag = sm.xyzGoTo(xCmd,yCmd , zCmd, 0.5*velCmd)
+		flag = sm.xyzGoto(xCmd,yCmd , zCmd, 0.5*velCmd)
 		sm.client.wait_for_result()
-		if countSearchValve == 0 and abs(yCur-yTouch)>200):
+		xCur,yCur,zCur= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
+
+		if countSearchValve == 0 and abs(yCur-yTouch)>=200:
 			countSearchValve =1
-		elif countSearchValve == 1 and abs(yCur-yTouch)>200):
+		elif countSearchValve == 1 and abs(yCur-yTouch)>200:
 			countSearchValve =0
 			
 		state_topic = "searchValve"
 		task_topic = 1
-
+		print " countSearchValve  ",countSearchValve
 ###################################################
 ##########  Mode : Aligne to Valve       ##########
 ###################################################
 	           
 	elif  sm.ur_mode=="valveAlign":
 		#TODO search
-		flag = sm.xyzShift(0.5*sm.pixel_x, 0.5*sm.pixel_y, 0.5*sm.pixel_z, 0.5*velCmd)
+		flag = sm.xyzShift(0.2*sm.pixel_x, 0.2*sm.pixel_y, 0.2*sm.pixel_z, 0.1*velCmd)
 		sm.client.wait_for_result()
-		xValve,yValve,zValve= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
-		print "xValve/yValve/zValve: ", xValve,yValve,zValve
+		#xValve,yValve,zValve= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
+		#print "xValve/yValve/zValve: ", xValve,yValve,zValve
 		state_topic = "valveAlign"
 		task_topic = 1
 
@@ -261,10 +272,13 @@ def main():
 	    	
 	    	
 	elif MoveTOTools and  sm.ur_mode=="goTools":
-		flag = sm.xyzShift(xBackBlane,0,0, velocity)
-		sm.client.wait_for_result()
+		#flag = sm.xyzShift(xBackPlane,0,0, velocity)
+		#sm.client.wait_for_result()
 		
-		flag = sm.xyzShiftWayPoints(0,450,100,nWayPoints, velocity)
+		xValve,yValve,zValve= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
+                print "xValve/yValve/zValve: ", xValve,yValve,zValve
+		time.sleep(2.0)
+		flag = sm.xyzShiftWayPoints(0,450,10,nWayPoints, velocity)
 		sm.client.wait_for_result()
 		state_topic = "atTools"
 		task_topic = 1
@@ -284,7 +298,7 @@ def main():
 	    	
 	elif   sm.ur_mode=="scanTools":
 	
-		flag = sm.xyzShift(0,(Scaning)*100,0, .5*velocity)
+		flag = sm.xyzShift(0.0,(Scaning)*70,0.0,0.5*velocity)
 		sm.client.wait_for_result()
 		Scaning=-Scaning
 		state_topic = "atTools"
@@ -302,9 +316,9 @@ def main():
 	    	
 	    	
 	elif   sm.ur_mode=="goCorrectTool":
-		xCmd = xTouch+100+GripperLen+Margin
-		yCmd = yValve+35.0+50.0*(PinNumber-1)
-		zCmd = zValve + (225-(185+10.0*(ToolNumber- 16)))
+		xCmd = xTouch+100+Margin
+		yCmd = yValve+348.0+50.0*(sm.PinNumber-1)
+		zCmd = zValve + (225-(185+10.0*(sm.ToolSize- 16)))
 
 		flag = sm.xyzGoto(xCmd,yCmd,zCmd, velocity)
 		sm.client.wait_for_result()
@@ -319,8 +333,8 @@ def main():
 ###################################################
 ########  Mode 11  Align with the correct tool   #####
 ###################################################  
-	elif  sm.ur_mode=="alignCorrectTool:
-		flag = sm.xyzShift(0.5*sm.pixel_x, 0.5*sm.pixel_y, 0.5*sm.pixel_z, 0.5*velCmd)
+	elif  sm.ur_mode=="alignCorrectTool":
+		flag = sm.xyzShift(0*sm.pixel_x, 0*sm.pixel_y, 0*sm.pixel_z, 0.5*velCmd)
 		xGrip,yGrip,zGrip= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
 		sm.client.wait_for_result()
 		state_topic = "alignCorrectTool"
@@ -334,10 +348,14 @@ def main():
 ###################################################
 ########  Mode:   Grip the correct  tool   #####
 ###################################################  
-	elif  GoGripping == "Running" and sm.ur_mode=="goGripping":
-		flag = sm.xyzShift(xTouch+30-xGrip, 0, 0, 0.5*velCmd)
+	elif  GoGripping  and sm.ur_mode=="goGripping":
+
+		xcmdg=xTouch+30-xGrip
+		print "I am movint to the tool by ", xcmdg
+		flag = sm.xyzShiftWayPoints(xcmdg, 0, 0,4, 0.3*velCmd)
+
 		sm.client.wait_for_result()
-		GoGripping == "Done"
+		GoGripping = False 
 		state_topic = "atGrip"
 		task_topic = 1		
 		
@@ -348,10 +366,19 @@ def main():
 ########## Mode: Move back to the valve #####
 ###################################################  
 	elif  BackPlane and sm.ur_mode=="moveValve":
-		flag = sm.xyzShift(xBackBlane,0.0, 0.0, velCmd)
+		flag = sm.xyzShiftWayPoints(150.0,0.0, 0.0,4, velCmd)
 		sm.client.wait_for_result()
-		flag = sm.xyzGoto(xValve,yValve,zValve+20, velocity)
+
+
+                flag = sm.xyzShiftWayPoints(0.0,-300, 0.0,4, velCmd)
+                sm.client.wait_for_result()
+
+		flag = sm.xyzGoto(xValve,yValve,zValve+50, velocity)
 		sm.client.wait_for_result()
+
+		flag = sm.xyzShiftWayPoints(xTouch-xValve+70.0,0,0,4, velocity)
+                sm.client.wait_for_result()
+
 		state_topic = "atValve"
 		task_topic = 1
 		BackPlane = False
