@@ -35,18 +35,8 @@ int main(int argc, char **argv)
 	//Cascade detection object
 	VizLibrary vizlibObj;
 	vizlibObj.trainNN();
-	vizlibObj.detectProcess();
+	vizlibObj.detectAndIdent();
 	
-	
-	//Mode select class object
-	//Manages current mode based on state/information flow
-	//Size identification object
-	IdentifySize identObj;
-	
-	/*
-	//Tool tracker object
-	TrackTool trackObj;
-	*/
 	
 	//Variables published
 	std_msgs::String mode_Viz;
@@ -57,22 +47,22 @@ int main(int argc, char **argv)
 	image_transport::ImageTransport it(node_Viz);
 	image_transport::Subscriber sub = it.subscribe("usb_cam/image_rect_color", 1, &VizLibrary::imageCallback, &vizlibObj);
 	//System mode
-	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::String>("cmdmode_v", 100, &VizLibrary::modeCb, &vizlibObj);
+	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::String>("cmdmode_viz", 100, &VizLibrary::modeCb, &vizlibObj);
 	//Subscribe to joint_states to record in Mode 2
-	ros::Subscriber sub_joints = node_Viz.subscribe<sensor_msgs::JointState>("joint_states", 100,  &IdentifySize::jointCallback, &identObj);
+	ros::Subscriber sub_joints = node_Viz.subscribe<sensor_msgs::JointState>("joint_states", 100,  &VizLibrary::jointCallback, &vizlibObj);
 	
 	
 	//PUBLISH
 	//Current vision mode
 	ros::Publisher pub_v_mode = node_Viz.advertise<std_msgs::String>("mode_v_main",100);
 	//Task finish confirmation mode
-	ros::Publisher pub_v_fin = node_Viz.advertise<std_msgs::Int32>("finished_v",100);
+	ros::Publisher pub_v_fin = node_Viz.advertise<std_msgs::Int32>("task_v_main",100);
 	//Pixel difference publisher
 	ros::Publisher pub_v_pixel = node_Viz.advertise<geometry_msgs::Twist>("pixel_difference",100);
 	
 	
 	//Main Loop
-	ros::Rate r(5);
+	ros::Rate r(2);
 	while(ros::ok())
 	{
 		if (vizlibObj.mode_V_cmd == "Idle") {
@@ -82,6 +72,7 @@ int main(int argc, char **argv)
 		} else if (vizlibObj.mode_V_cmd == "valveViz") {
 			//Run valve detection algo, if circle found return
 			vizlibObj.detect_circlePub();
+			cout << "no of circles: " << vizlibObj.circles.size() << endl;
 			if ( vizlibObj.circles.empty() == 0 ) {
 				mode_Viz.data = "valveFound";
 			} else {
@@ -90,7 +81,6 @@ int main(int argc, char **argv)
 		} else if (vizlibObj.mode_V_cmd == "valveAlign") {
 			//Run valve detection algo, if circle found return
 			vizlibObj.detect_circlePub();
-			
 			//Align the camera to the valve center
 			if ( vizlibObj.circles.empty() == 0 ) {
 				//Set "Aligned" if pixel diff. between circle center and image center is less than a threshold
@@ -108,14 +98,11 @@ int main(int argc, char **argv)
 			pub_v_pixel.publish(vizlibObj.xyzPxMsg);
 		} else if (vizlibObj.mode_V_cmd == "detectTools") {
 			//Tool detection mode: Detect 6 tools and if found return
-			int detect_Res = vizlibObj.detectProcess();
-			//Identify sizes if 6 tools are detected and separation test is successful
-			if ( (vizlibObj.tools_Ordered.size() == identObj.noOfTools) && (detect_Res == 1) ) {
-				cout << "VIZ: Identifying sizes..." << endl;
-				//Run the tooltip size identification and check if i_Level = n_Level
-				if (identObj.ident_Current(vizlibObj.tools_Ordered) == identObj.n_Level) {
-					cout << "Smallest tool: " << identObj.idx_SmallestTool << ", Size: " << identObj.smallestToolSize << endl;
-				}
+			if ( vizlibObj.level_Count <= vizlibObj.n_Level-1 ) {
+				int detect_Res = vizlibObj.detectAndIdent();
+				mode_Viz.data = "detectingTools";
+			} else {
+				mode_Viz.data = "toolDetectionFinished";
 			}
 		} else if (vizlibObj.mode_V_cmd == "alignCorrectTool") {
 			//Arm approached the correct tool, align the camera with the tool
@@ -138,6 +125,7 @@ int main(int argc, char **argv)
 		//Publish the current vision mode
 		pub_v_mode.publish(mode_Viz);
 		//Show the current vision mode
+		cout << "VIZ: cmd: " << vizlibObj.mode_V_cmd << endl;
 		cout << "VIZ: mode: " << mode_Viz.data << endl;
 		
 		//Spin and sleep

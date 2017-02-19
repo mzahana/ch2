@@ -14,10 +14,14 @@
 #include <opencv2/core/types_c.h>
 #include <sensor_msgs/JointState.h>
 #include "std_msgs/String.h"
-
+#include <eigen3/Eigen/Dense>
 
 using namespace std;
 using namespace cv;
+using namespace Eigen;
+
+
+
 
 class VizLibrary
 {
@@ -30,6 +34,20 @@ public:
 	double rect_Overlap_rat;
 	int cascade_Count;
 	string mode_V_cmd;
+
+
+	//IdentSize vars
+	int level_Count;
+	int n_Level; //total desired # of detections to store tool tip centers and joint poses
+	vector<double> M_tools_avgY; //Vector to store average lengths of tools (needed outside of this class)
+	int idx_SmallestTool; //Index of the smallest tool
+	double smallestToolSize; //Length of the smallest detected tool
+	int i_Level, noOfTools;
+	MatrixXd M_tools_X; //Matrix to store tools centers X (assuming six tools detected)
+	MatrixXd M_tools_Y; //Matrix to store tools centers Y
+	MatrixXd M_joints; //Matrix to store the joint poses
+	//Joint pose
+	vector<double> joint_Pose;
 	
 	
 	//Neural net vars
@@ -73,6 +91,16 @@ public:
 		sep_Pixel_max = 150;
 		//Cascade detection number of successful 6-tool-validation
 		cascade_Count = 0;
+		
+		//Ident variables
+		level_Count = 0;
+		n_Level = 10; i_Level = 1;
+		noOfTools = 6;
+		M_tools_X = MatrixXd::Zero(n_Level,noOfTools);
+		M_tools_Y = MatrixXd::Zero(n_Level,noOfTools);
+		M_joints = MatrixXd::Zero(n_Level,6); //6 is the number of joints
+		//Initialize the joint poses
+		for (int i = 0; i < joint_Pose.size(); i++){ joint_Pose[i] = 0; }
 	}
 	
 	
@@ -122,6 +150,33 @@ public:
 			return 0;
 		}
 	}
+
+
+
+	//Cascade detection and size identification function
+	int detectAndIdent(){
+		cout << "VIZ: Frame reading started..." << endl;
+		if ( frame.empty() == 0 ) {
+			tools_Ordered = detectAndDisplay( frame );
+			//Apply separation test
+			if( !separationTest(tools_Ordered) ){
+				cout << "Separation test failed!" << endl;
+				return 0;
+			} else {
+				cout << "Number of tools validated: [" << tools_Ordered.size() << "]" << endl;
+				//If 6 tools are detected and passed separation test, Identify sizes
+				if ( tools_Ordered.size() == noOfTools ){
+					level_Count = findLevels(tools_Ordered);
+					return 1;
+				} else {
+					return 0;
+				}		
+			}
+		} else {
+			cout << "Frame is empty. Returning..." << endl;
+			return 0;
+		}
+	}
 	
 	
 	//NN train functions
@@ -160,6 +215,17 @@ public:
 
 
 
+	//Encoder Callback
+	void jointCallback(const sensor_msgs::JointState::ConstPtr& msgJoint)
+	{
+		const vector<string> joint_Names = msgJoint -> name;
+		if (joint_Names[0] == "ur5_arm_shoulder_pan_joint") {
+			joint_Pose = msgJoint -> position;
+		}
+	}
+
+
+
 
 private:
 	/** @function detectAndDisplay */
@@ -175,8 +241,7 @@ private:
 	    Mat nn_Img = _frame;
 
 	    //Run Cascade to detect tooltips (Phase 1)
-	    casClassifier.detectMultiScale( frame_gray, tools_Phase1, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
-		
+		casClassifier.detectMultiScale( frame_gray, tools, 1.005, 5, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );		/*
 		//Run Cascade inside the detected tooltips (Phase 2)
 		for( size_t i = 0; i < tools_Phase1.size(); i++ ){
 			Mat toolROI = frame_gray( tools_Phase1[i] );
@@ -201,6 +266,7 @@ private:
 				tools.push_back( tool_Phase2[idx_Smallest] );
 			}
 		}
+		*/
 		
 
 	    for( size_t i = 0; i < tools.size(); i++ ){
@@ -247,19 +313,16 @@ private:
 	        toolsColTemp.clear();
 	    }
 		
-		//Remove overlaps and sort tool sizes
-		if ( !calcRectOverlap(tools, _frame) ) {
-		 	cout << "Overlap detection failed!!!" << endl;
-		}
 		
-	    //-- Show results
-	    imshow( "Ordered tools", _frame );
-	    waitKey(2);
-
-	    if (tools.size() > 0) {
-	    	//Crop frame_gray for the identification code
-		    frame_to_ident = frame_gray(tools[0]);
-		    frame_color_ident = _frame(tools[0]);
+	    //If number of tools > 1, do overlap detection, sorting, separation, identification
+	    if (tools.size() >= 2) {
+	    	//Remove overlaps and sort tool sizes
+			if ( !calcRectOverlap(tools, _frame) ) {
+			 	cout << "Overlap detection failed!!!" << endl;
+			}
+		    //-- Show results
+		    imshow( "Ordered tools", _frame );
+		    waitKey(2);
 	    }
 	    
 	    //Clear tools
@@ -362,6 +425,7 @@ private:
 		}
 	}
 	
+	/***************/
 	//Separation test function
 	int separationTest(vector<Rect> tools_Ordered){
 		for (int i = 0; i < tools_Ordered.size()-1; i++) {
@@ -417,6 +481,60 @@ private:
 		}
 	}
 	
+
+
+
+	/***************/
+	//Finds the vertical levels of tooltip centers
+	//Store the detected centers and joint positions for n_Level # of frames
+	int findLevels(vector<Rect> tools_Level){
+		//Store the values
+		for (int j = 0; j < noOfTools; j++) {
+			M_tools_X (i_Level-1,j) = tools_Level[j].x + 0.5*tools_Level[j].width;
+			M_tools_Y (i_Level-1,j) = tools_Level[j].y + 0.5*tools_Level[j].height;
+		}
+		cout << "VIZ: Tooltip center heights: " << M_tools_Y << endl;
+		cout << "VIZ: joint_Pose.size()s: " << joint_Pose.size() << endl;
+		//Store the joint configurations where 6 tools detected
+		for (int j = 0; j < joint_Pose.size(); j++) {
+			M_joints (i_Level-1,j) = joint_Pose[j];
+		}
+		
+		//If i_Level = n_Level, calculate y-axis lengths and order
+		if (i_Level == n_Level) {
+			for (int j = 0; j < noOfTools; j++) {
+				double M_Ysum = 0;
+				for (int i = 0; i < n_Level; i++){ M_Ysum = M_Ysum + M_tools_Y (i,j); }
+				M_tools_avgY.push_back( M_Ysum/((double)n_Level) ); //Length of the jth tool's center (robot z-axis)
+			}
+			//Show the tools lengths (the order is the same as of tools_Ordered)
+			for (int i = 0; i < noOfTools; i++)	{
+				cout << "VIZ: Tooltip center heights: " << endl;
+				cout << "[" << i << "] : " << M_tools_avgY[i] << endl;
+			}
+			//Find and show the smallest tool
+			smallestToolSize = M_tools_avgY[0];
+			idx_SmallestTool = 0;
+			for (int i = 0; i < noOfTools; i++)	{
+				if (smallestToolSize >= M_tools_avgY[i]) {
+					smallestToolSize = M_tools_avgY[i];
+					idx_SmallestTool = i;
+				}
+			}
+			cout << "Smallest tool: " << idx_SmallestTool << ", Size: " << smallestToolSize << endl;
+		}
+		
+		//Iterate
+		i_Level++;
+		//Return the current i_Level for checking stopping time of this function
+		return i_Level-1;
+	}
+
+
+
+
+
+
 	
 	/***************/
 	//Read data csv files
