@@ -29,8 +29,7 @@ public:
 	//Global vars
 	String cascade_name, video_name, window_name, data_mean, pceNN, nnInput_Data, nn_Output;
 	CascadeClassifier casClassifier;
-	vector<Rect> tools, _lasttools, tools_Overlap, tools_Phase1, tool_Phase2;
-	vector<Rect> tools_Ordered; //Vector to store ascending ordered tools (order of initial x)
+	vector<Rect> tools, tools_Overlap, tools_Phase1, tool_Phase2, tools_Neural, tools_Ordered; //Vectors to store the processed tools
 	double rect_Overlap_rat;
 	int cascade_Count;
 	string mode_V_cmd;
@@ -68,7 +67,6 @@ public:
 	int pixelThres = 2;
 	//Vector of 3D vectors to store circles
 	vector<Vec3f> circles;
-	
 	
 	//Publish vars (automatically initializes with zero vals)
 	geometry_msgs::Twist xyzPxMsg;
@@ -120,7 +118,7 @@ public:
 			cv_ptr = cv_bridge::toCvCopy(original_image, sensor_msgs::image_encodings::BGR8);
 		}
 		catch (cv_bridge::Exception& e){
-			ROS_ERROR("detectionOpenCV::main.cpp::cv_bridge exception: %s", e.what());
+			ROS_ERROR("VIZ: detectionOpenCV::main.cpp::cv_bridge exception: %s", e.what());
 			return;
 		}
 		frame = cv_ptr -> image;
@@ -135,10 +133,10 @@ public:
 			tools_Ordered = detectAndDisplay( frame );
 			//Apply separation test
 			if( !separationTest(tools_Ordered) ){
-				cout << "Separation test failed!" << endl;
+				cout << "VIZ: Separation test failed!" << endl;
 				return 0;
 			} else {
-				cout << "Number of tools validated: [" << tools_Ordered.size() << "]" << endl;
+				cout << "VIZ: Number of tools validated: [" << tools_Ordered.size() << "]" << endl;
 				//Publish the pixel differences
 				xyzPxMsg.linear.y = tools_Ordered[0].x - ceil(frame.cols/2);
 				xyzPxMsg.linear.z = -( tools_Ordered[0].y - ceil(frame.rows/2) );
@@ -146,7 +144,7 @@ public:
 				return 1;
 			}
 		} else {
-			cout << "Frame is empty. Returning..." << endl;
+			cout << "VIZ: Frame is empty. Returning..." << endl;
 			return 0;
 		}
 	}
@@ -157,13 +155,33 @@ public:
 	int detectAndIdent(){
 		cout << "VIZ: Frame reading started..." << endl;
 		if ( frame.empty() == 0 ) {
-			tools_Ordered = detectAndDisplay( frame );
+			//Run Cascade 1
+			tools_Phase1 = detectCascade( frame );
+			
+			//Overlap detection (output: tools_overlap)
+			//If number of tools > 1, run overlap detection (keep the largest)
+			if (tools_Phase1.size() >= 2) {
+				//Remove overlaps
+				if ( !calcRectOverlap(tools, frame) ) {
+					cout << "VIZ: Overlap detection failed!!!" << endl;
+				}
+			}
+			
+			//Run Cascade2
+			tools_Phase2 = detectCascade( frame , tools_Overlap );
+			
+			//Run NN on tools_Phase2
+			tools_Neural = nnTools( frame , tools_Phase2 );
+			
+			//Sort the NN-identified tools
+			tools_Ordered = sortTools( tools_Neural );
+			
 			//Apply separation test
 			if( !separationTest(tools_Ordered) ){
-				cout << "Separation test failed!" << endl;
+				cout << "VIZ: Separation test failed!" << endl;
 				return 0;
 			} else {
-				cout << "Number of tools validated: [" << tools_Ordered.size() << "]" << endl;
+				cout << "VIZ: Number of tools validated: [" << tools_Ordered.size() << "]" << endl;
 				//If 6 tools are detected and passed separation test, Identify sizes
 				if ( tools_Ordered.size() == noOfTools ){
 					level_Count = findLevels(tools_Ordered);
@@ -173,9 +191,14 @@ public:
 				}		
 			}
 		} else {
-			cout << "Frame is empty. Returning..." << endl;
+			cout << "VIZ: Frame is empty. Returning..." << endl;
 			return 0;
 		}
+		
+		
+		//Show non-overlapping tools
+		imshow( "VIZ: Ordered tools", frame );
+		waitKey(2);
 	}
 	
 	
@@ -184,7 +207,7 @@ public:
 		readDataFiles();
 		nnetwork = new (nothrow) CvANN_MLP;
 		if (nnetwork == nullptr) {
-			cout << "Memory could not be allocated for NN!!!" << endl;
+			cout << "VIZ: Memory could not be allocated for NN!!!" << endl;
 			return -1;
 		}
 		nnetwork -> create(layers , CvANN_MLP::SIGMOID_SYM, 1, 1);
@@ -208,6 +231,7 @@ public:
 		return 0;
 	}
 
+	
 	//Declare
 	void detect_circlePub(){
 		detect_circle(frame, frame_gray);
@@ -228,47 +252,65 @@ public:
 
 
 private:
-	/** @function detectAndDisplay */
+	/** @function detectCascade */
 	//Detected, validated, overlap checked and sorted tools stored in tools_Ordered public var
-	vector<Rect> detectAndDisplay( Mat _frame )
+	//Cascade detection function
+	vector<Rect> detectCascade( Mat frame_gray )
+	{
+	    //Run Cascade to detect tooltips
+		casClassifier.detectMultiScale( frame_gray, tools, 1.005, 5, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
+		return tools;
+	}
+	
+	
+	
+	/** @function detectCascade_second */
+	//Second Cascade function
+	vector<Rect> detectCascade_second( Mat frame_gray , vector<Rect> tools_Phase1 ) {
+		//Clear tools vector (output) before filling it
+		tools.clear();
+		//Local vars
+		vector<Rect> tools_Phase2_tmp;
+		//Loop among the Phase_1 tools
+		for( size_t i = 0; i < tools_Phase1.size(); i++ ){
+			//Run Cascade inside the detected tooltips
+			Mat toolROI = frame_gray( tools_Phase1[i] );
+			casClassifier.detectMultiScale( toolROI, tools_Phase2_tmp, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
+			//If tool(s) detected, append all at the end of the "tools"
+			if (tools_Phase2_tmp.empty() == 0) {
+				//Add the original (Phase1 tool) to tools
+				tools.push_back( tools_Phase1[i] );
+				//Add all detected tools to tools vector
+				for (int j = 0; j < tools_Phase2_tmp.size(); j++) {
+					//Calculate the actual tool_Phase2 coordinate
+					tools_Phase2_tmp[j].x += tools_Phase1[i].x;
+					tools_Phase2_tmp[j].y += tools_Phase1[i].y;
+					tools.push_back( tools_Phase2_tmp[j] );
+				}
+			} else {
+				//Add "only" the original (Phase1 tool) to tools if nothing detected inside it
+				tools.push_back( tools_Phase1[i] );
+			}
+		}
+		return tools;
+	}
+	
+	
+	
+	/** @function nnTools */
+	//Neural function
+	vector<Rect> nnTools( Mat _frame , vector<Rect> tools )
 	{
 		//NN private parameters
 		Mat toolsCroppedTemp = Mat::zeros(min_W,min_L,CV_8U);
-        vector<double> toolsColTemp;
-        Mat test_input = Mat::zeros(no_of_in_layers,1,CV_64F);
-        Mat test_input_real = Mat::zeros(1,no_of_in_layers,CV_64F);
-	    Mat img_Rect = _frame;
-	    Mat nn_Img = _frame;
-
-	    //Run Cascade to detect tooltips (Phase 1)
-		casClassifier.detectMultiScale( frame_gray, tools, 1.005, 5, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );		/*
-		//Run Cascade inside the detected tooltips (Phase 2)
-		for( size_t i = 0; i < tools_Phase1.size(); i++ ){
-			Mat toolROI = frame_gray( tools_Phase1[i] );
-			casClassifier.detectMultiScale( toolROI, tool_Phase2, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
-			if (tool_Phase2.empty() == 0) {
-				//Calculate the actual tool_Phase2 coordinate
-				tool_Phase2[i].x += tools_Phase1[i].x;
-				tool_Phase2[i].y += tools_Phase1[i].y;
-				//Add the accepted tool to tools vector
-				tools.push_back( tool_Phase2[i] );
-			} else {
-				int idx_Smallest = 0;
-				for( size_t j = 0; j < tool_Phase2.size()-1; j++ ){
-					if (tool_Phase2[j+1].area() <= tool_Phase2[j].area() ) {
-						idx_Smallest = j;
-					}
-				}
-				//Calculate the actual tool_Phase2 coordinate
-				tool_Phase2[idx_Smallest].x += tools_Phase1[i].x;
-				tool_Phase2[idx_Smallest].y += tools_Phase1[i].y;
-				//Add the accepted tool to tools vector
-				tools.push_back( tool_Phase2[idx_Smallest] );
-			}
-		}
-		*/
+		vector<double> toolsColTemp;
+		Mat test_input = Mat::zeros(no_of_in_layers,1,CV_64F);
+		Mat test_input_real = Mat::zeros(1,no_of_in_layers,CV_64F);
+		Mat img_Rect = _frame;
+		Mat nn_Img = _frame;
+		vector<Rect> tools_Neural_local;
 		
-
+		//Run NN for each rectangle
 	    for( size_t i = 0; i < tools.size(); i++ ){
 			//Draw rectangle around tooltips
 	  	    rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(255,0,0), 2);
@@ -313,50 +355,17 @@ private:
 	        toolsColTemp.clear();
 	    }
 		
-		
-	    //If number of tools > 1, do overlap detection, sorting, separation, identification
-	    if (tools.size() >= 2) {
-	    	//Remove overlaps and sort tool sizes
-			if ( !calcRectOverlap(tools, _frame) ) {
-			 	cout << "Overlap detection failed!!!" << endl;
-			}
-		    //-- Show results
-		    imshow( "Ordered tools", _frame );
-		    waitKey(2);
-	    }
-	    
+		//Store the NN identified tools in tools_Neural
+		tools_Neural_local = tools;
 	    //Clear tools
 	    tools.clear();
 	    //Return the sorted tools
-	    return tools_Ordered;
-	 }
-
-
-
-	// this function computes the ratio of two consecutive bounding boxes (NOT CORRECT!)
-	float computeRectJoinUnion(const CvRect &rc1, const CvRect &rc2)
-	{
-	    CvPoint p1, p2;                 
-	    p1.x = std::max(rc1.x, rc2.x);
-	    p1.y = std::max(rc1.y, rc2.y);
-
-	    p2.x = std::min(rc1.x +rc1.width, rc2.x +rc2.width);
-	    p2.y = std::min(rc1.y +rc1.height, rc2.y +rc2.height);
-
-	    float AJoin = abs(p2.x - p1.x)*abs(p2.y - p1.y);
-	    float A1 = rc1.width * rc1.height;
-	    float A2 = rc2.width * rc2.height;
-	    float AUnion = (A1 + A2 - AJoin);                 
-
-	    if( AUnion > 0 ){
-	        return (AJoin/AUnion);                  
-	    } else{
-	        return 0;
-	    }
+	    return tools_Neural_local;
 	}
+
 	
-	
-	//Calculate box overlapping: if two rectangles overlap more than 0.3
+	/** @function calcRectOverlap */
+	//Calculate box overlapping: if two rectangles overlap more than rect_Overlap_rat
 	//remove the bigger box
 	int calcRectOverlap(vector<Rect> tools, Mat _frame){
 		//Calculate overlap and store non-overlapping in tools_Overlap
@@ -367,9 +376,10 @@ private:
 					double Ai = tools[i].width*tools[i].height;
 					double Aj = tools[j].width*tools[j].height;
 					double Amax = max(Ai,Aj);
-					double Amin = max(Ai,Aj);
-					if( (tools[i] & tools[j]).area() >= 0.3*Amin){
-						if (Amax == Ai) {
+					double Amin = min(Ai,Aj);
+					//Erase the smaller of two overlapping tools
+					if( (tools[i] & tools[j]).area() >= rect_Overlap_rat*Amin){
+						if (Amax == Aj) {
 							tools_Overlap.erase( remove( tools_Overlap.begin(), tools_Overlap.end(), tools_Overlap[i] ), tools_Overlap.end() );
 						}
 						else {
@@ -381,51 +391,57 @@ private:
 			//Show non-overlapped detections with green
 			for (int i = 0; i < tools_Overlap.size(); i++)
 			{
-				rectangle(_frame, Point(tools_Overlap[i].x, tools_Overlap[i].y), Point(tools_Overlap[i].x + tools_Overlap[i].width, tools_Overlap[i].y + tools_Overlap[i].height), Scalar(0,255,0), 2);
+				int colorRect [3]; colorRect[0] = 0; colorRect[1] = 255; colorRect[2] = 0;
+				drawRect( frame, tools_Overlap, colorRect );
 			}
-
-			//Sort tools based on horizontal pose
-			vector<int> horPoseIdx, horPoseVec; //Vector to store the index order and the x-axis order
-			vector<Rect> tools_Ovr_Tmp;
-			
-			//Order tools
-			tools_Ordered.clear();
-			tools_Ordered.push_back( tools_Overlap[0] );
-			for (int i = 1; i < tools_Overlap.size(); i++) {
-				vector<Rect>::iterator iter_Order = tools_Ordered.end();
-				for (int k = i-1; k > -1; k--)
-				{
-					if ( (i == 1) && (k == 0) )
-					{
-						if (tools_Overlap[i].x >= tools_Ordered[k].x){
-							tools_Ordered.insert( iter_Order , tools_Overlap[i] );
-						} else {
-							tools_Ordered.insert( iter_Order-1 , tools_Overlap[i] );
-						}
-						break;
-					}
-					if (tools_Overlap[i].x >= tools_Ordered[k].x)
-					{
-						tools_Ordered.insert( iter_Order , tools_Overlap[i] );
-						break;
-					} else if (k == 0) {
-						tools_Ordered.insert( iter_Order-1 , tools_Overlap[i] );
-						break;
-					} else {
-						iter_Order--;
-					}
-				}
-			}
-
-			//Return the overlap checked and ordered tools in tools_Ordered
 			return 1;
 		} else {
-			cout << "ERR: Number of tools detected not enough for size sorting" << endl;
+			cout << "ERR: Number of tools detected not enough for overlap test!!!" << endl;
 			return 0;
 		}
 	}
 	
-	/***************/
+	
+	/** @function sortTools */
+	//Sort tools based on horizontal pose
+	vector<Rect> sortTools ( Mat tools_for_sort ) {
+		//Local vars
+		vector<Rect> tools_Ordered_local;
+		tools_Ordered_local.push_back( tools_for_sort[0] );
+		//Loop among the input tools
+		for (int i = 1; i < tools_for_sort.size(); i++) {
+			vector<Rect>::iterator iter_Order = tools_Ordered_local.end();
+			for (int k = i-1; k > -1; k--)
+			{
+				if ( (i == 1) && (k == 0) )
+				{
+					if (tools_for_sort[i].x >= tools_Ordered[k].x){
+						tools_Ordered_local.insert( iter_Order , tools_for_sort[i] );
+					} else {
+						tools_Ordered_local.insert( iter_Order-1 , tools_for_sort[i] );
+					}
+					break;
+				}
+				if (tools_for_sort[i].x >= tools_Ordered_local[k].x)
+				{
+					tools_Ordered_local.insert( iter_Order , tools_for_sort[i] );
+					break;
+				} else if (k == 0) {
+					tools_Ordered_local.insert( iter_Order-1 , tools_for_sort[i] );
+					break;
+				} else {
+					iter_Order--;
+				}
+			}
+		}
+		
+		//Return the overlap checked and ordered tools in tools_Ordered
+		return tools_Ordered_local;
+	}
+	
+	
+
+	/** @function separationTest */
 	//Separation test function
 	int separationTest(vector<Rect> tools_Ordered){
 		for (int i = 0; i < tools_Ordered.size()-1; i++) {
@@ -437,54 +453,10 @@ private:
 		}
 		return 1;
 	}
-	
-	/***************/
-	//Hough circle detection
-	void detect_circle(Mat img, Mat gray){
-		//Function vars
-		vector<double> radius;
-		Point center_Valve;
-		//Check if the frame is empty
-		if (img.empty() == 0) {
-			//Blur the image to reduce false detections
-			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );			
-			//Hough circles detection
-			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, img.rows/4, 200, 100 );
-			//For each circle, draw circle on the image
-			for( size_t i = 0; i < circles.size(); i++ )
-			{
-				Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
-				radius.push_back( cvRound(circles[i][2]) );
-				// draw the circle center
-				circle( img, center, 3, Scalar(0,255,0), -1, 8, 0 );
-				// draw the circle outline
-				circle( img, center, radius.back(), Scalar(0,0,255), 3, 8, 0 );
-				if ( i == 0 ){ center_Valve = center; }
-				//If more than one circle detected, take the biggest circle
-				if ( ( radius.back() >= radius[radius.size()-1] ) && (i > 0) ) {
-					center_Valve = center;
-					//radius_Valve.push_back( cvRound(valve_Circle[i][2]) );
-				}
-			}
-			//Calculate distance between the first circle center and image center and publish
-			if ( circles.empty() == 0 ) {
-				xyzPxMsg.linear.y = center_Valve.x - ceil(img.cols/2);
-				xyzPxMsg.linear.z = -(center_Valve.y - ceil(img.rows/2));
-			}
-			//Clear the radiusValve vector
-			radius.clear();
-			
-			//cout << "Biggest circle radius: " << radius_Valve << endl;
-			//Show the image with circles
-			imshow( "circles", img );
-			waitKey(1);
-		}
-	}
-	
 
 
 
-	/***************/
+	/** @function findLevels */
 	//Finds the vertical levels of tooltip centers
 	//Store the detected centers and joint positions for n_Level # of frames
 	int findLevels(vector<Rect> tools_Level){
@@ -531,12 +503,59 @@ private:
 	}
 
 
-
-
-
-
+	/** @function detect_circle */
+	//Hough circle detection
+	void detect_circle(Mat img, Mat gray){
+		//Function vars
+		vector<double> radius;
+		Point center_Valve;
+		//Check if the frame is empty
+		if (img.empty() == 0) {
+			//Blur the image to reduce false detections
+			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );
+			//Hough circles detection
+			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, img.rows/4, 200, 100 );
+			//For each circle, draw circle on the image
+			for( size_t i = 0; i < circles.size(); i++ )
+			{
+				Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+				radius.push_back( cvRound(circles[i][2]) );
+				// draw the circle center
+				circle( img, center, 3, Scalar(0,255,0), -1, 8, 0 );
+				// draw the circle outline
+				circle( img, center, radius.back(), Scalar(0,0,255), 3, 8, 0 );
+				if ( i == 0 ){ center_Valve = center; }
+				//If more than one circle detected, take the biggest circle
+				if ( ( radius.back() >= radius[radius.size()-1] ) && (i > 0) ) {
+					center_Valve = center;
+					//radius_Valve.push_back( cvRound(valve_Circle[i][2]) );
+				}
+			}
+			//Calculate distance between the first circle center and image center and publish
+			if ( circles.empty() == 0 ) {
+				xyzPxMsg.linear.y = center_Valve.x - ceil(img.cols/2);
+				xyzPxMsg.linear.z = -(center_Valve.y - ceil(img.rows/2));
+			}
+			//Clear the radiusValve vector
+			radius.clear();
+			
+			//cout << "Biggest circle radius: " << radius_Valve << endl;
+			//Show the image with circles
+			imshow( "circles", img );
+			waitKey(1);
+		}
+	}
 	
-	/***************/
+	
+	/** @function drawRect */
+	//Rectangle drawing function
+	void drawRect( Mat frame , vector<Rect> tools , int colorOrder ) {
+		rectangle(frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(colorOrder[0],colorOrder[1],colorOrder[2]), 2);
+	}
+
+
+
+	/** @function readDataFiles */
 	//Read data csv files
 	void readDataFiles() {
 		std::ifstream ifs1 ("/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/data_mean.csv", ifstream::in);
