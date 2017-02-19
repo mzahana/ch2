@@ -409,24 +409,31 @@ def main():
 #######          Mode: Rotation    ####
 ###################################################
 	elif  sm.ur_mode=="rotateValve":
-		 xTorqueThr=
-		 while not Engaged and sm.xTorque =< xTorqueThr:
-		        flag = sm.xyzShift(0.0, 2*sin(Q[5]-15*np.pi/180), -2*cos(Q[5]-15*np.pi/180), 0.2*velCmd)
-		        time.sleep(0.2)
-		        sm.client.wait_for_result()
-		        if sm.xTorque> xTorqueThr:
-		            print "STOPPING!!!"
-		            Engaged = True
-				
-		flag = sm.xyzShift(0.0, 1*sin(Q[5]-15*np.pi/180), -1*cos(Q[5]-15*np.pi/180), 0.2*velCmd)
-		Q = sm.jointPosition
-		Q[5]=Q[5]+5*np.pi/180
-		Qtarget=[Q[0],Q[1],Q[2],Q[3],Q[4],Q[5]]
-		sm.jointGoto(Qtarget,5.0)
-		sm.client.wait_for_result()
-		state_topic = "valveRotated"
-		task_topic = 1
-		Engaged = False
+                xTorqueref=sm.xTorque
+                while not Engaged:
+
+                        q1,q2,q3,q4,q5,q6 = sm.jointPosition
+                        print q1,q2,q3,q4,q5,q6
+                        flag = sm.xyzShiftRotate(0.0, 2*sin(q6-15*np.pi/180), -2*cos(q6-15*np.pi/180),q6, 0.2*velCmd)
+                        time.sleep(0.2)
+                        sm.client.wait_for_result()
+                        if abs(sm.xTorque-xTorqueref)> 0.5:
+                            print "STOPPING!!!"
+                            Engaged = True
+
+                flag = sm.xyzShiftRotate(0.0,- 1*sin(q6-15*np.pi/180), 1*cos(q6-15*np.pi/180),q6, 0.2*velCmd)
+                q1,q2,q3,q4,q5,q6 = sm.jointPosition
+
+                q6=q6+5.0*np.pi/180
+
+
+                Qtarget=[q1,q2,q3,q4,q5,q6]
+                sm.jointGoto(Qtarget,5.0)
+                sm.client.wait_for_result()
+                state_topic = "valveRotated"
+                task_topic = 1
+                Engaged = False
+
 
 		
 
