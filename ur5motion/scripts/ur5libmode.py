@@ -353,6 +353,71 @@ class ur5Class():
                 flag = False
             return flag
 
+
+
+
+
+
+
+
+
+    # commanded wrist location
+    def xyzRotate(self,x,y,z,q6,velocity):
+        # returns flag for successful execution
+
+        flag, q1, q2, q3 = self.wristIK(x,y,z)
+        if not flag:
+            return flag # = False
+        else:
+            Q = self.jointPosition
+            xNow, yNow, zNow = self.wristFK(Q[0],Q[1],Q[2])
+            distance = sqrt( (x - xNow)**2 + (y - yNow)**2 + (z - zNow)**2)
+            if velocity > self.vMax:
+                print "Reducing requested velocity: ", velocity, " to vMax: ", self.vMax
+                velocity = self.vMax
+            dT = distance/velocity
+            q4, q5 = self.cobraHead(q1,q2,q3)
+            Qtarget = [q1, q2, q3, q4, q5, q6]
+            status = self.jointGoto(Qtarget,dT)
+            if not status == 5:
+                flag = True
+            else:
+                flag = False
+            return flag
+
+
+
+
+
+    # commanded shift in wrist location using wrist coordinates
+    def xyzShiftRotate(self,delx,dely,delz,q6,velocity):
+        Q = self.jointPosition
+        q5o = self.q5offset
+        x,y,z = self.wristFK(Q[0],Q[1],Q[2])
+        xNew = x + delx*cos(q5o) - dely*sin(q5o)
+        yNew = y + delx*sin(q5o) + dely*cos(q5o)
+        zNew = z + delz
+
+        flag = self.xyzRotate(xNew,yNew,zNew,q6,velocity)
+        return flag
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # commanded shift in wrist location using wrist coordinates
     def xyzShift(self,delx,dely,delz,velocity):
         Q = self.jointPosition
