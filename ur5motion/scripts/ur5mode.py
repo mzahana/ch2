@@ -408,23 +408,49 @@ def main():
 ###################################################
 #######          Mode: Rotation    ####
 ###################################################
-	elif  sm.ur_mode=="rotateValve":
+	 elif  sm.ur_mode=="rotateValve":
+                xref,yref,zref= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
+
                 xTorqueref=sm.xTorque
                 while not Engaged:
 
                         q1,q2,q3,q4,q5,q6 = sm.jointPosition
                         print q1,q2,q3,q4,q5,q6
-                        flag = sm.xyzShiftRotate(0.0, 2*sin(q6-15*np.pi/180), -2*cos(q6-15*np.pi/180),q6, 0.2*velCmd)
+                        flag = sm.xyzShiftRotate(0.0,-1*sin(q6-15*np.pi/180), -1*cos(q6-15*np.pi/180),q6, 0.5*velCmd)
+                        print "xhift y/z :",  -1*sin(q6-15*np.pi/180), -1*cos(q6-15*np.pi/180)
                         time.sleep(0.2)
                         sm.client.wait_for_result()
-                        if abs(sm.xTorque-xTorqueref)> 0.5:
+                        print "Torque Difference: ",abs( sm.xTorque-xTorqueref)
+                        if abs(sm.xTorque-xTorqueref)> 0.23:
                             print "STOPPING!!!"
                             Engaged = True
 
-                flag = sm.xyzShiftRotate(0.0,- 1*sin(q6-15*np.pi/180), 1*cos(q6-15*np.pi/180),q6, 0.2*velCmd)
+
+                        xNow,yNow,zNow= sm.wristFK(sm.jointPosition[0],sm.jointPosition[1],sm.jointPosition[2])
+                        if zref- zNow>80:
+                                ValveAligned =False
+                                print "I an not alligned to the valve, I will go back"
+                                yTorqueref=sm.yTorque
+                                while not ValveAligned:
+                                 flag = sm.xyzShift(0.0,1.0, 0.0,velCmd)
+                                 sm.client.wait_for_result()
+                                 if abs(sm.yTorque-yTorqueref)> 0.2:
+                                        flag = sm.xyzShift(0.0,-30.0, 0.0,velCmd)
+                                        sm.client.wait_for_result()
+
+                                        flag = sm.xyzShift(0.0,0.0,zref- zNow,velCmd)
+                                        sm.client.wait_for_result()
+
+                                        flag = sm.xyzShift(0.0,50.0,0.0,velCmd)
+                                        sm.client.wait_for_result()
+                                        ValveAligned =True
+
+
+                flag = sm.xyzShiftRotate(0.0, 3.5*sin(q6-15*np.pi/180), 3.5*cos(q6-15*np.pi/180),q6, 0.5*velCmd)
                 q1,q2,q3,q4,q5,q6 = sm.jointPosition
 
-                q6=q6+5.0*np.pi/180
+                q6=q6+10.0*np.pi/180
+
 
 
                 Qtarget=[q1,q2,q3,q4,q5,q6]
