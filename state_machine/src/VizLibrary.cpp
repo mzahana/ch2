@@ -29,7 +29,7 @@ public:
 	//Global vars
 	String cascade_name, video_name, window_name, data_mean, pceNN, nnInput_Data, nn_Output;
 	CascadeClassifier casClassifier;
-	vector<Rect> tools, tools_Overlap, tools_Phase1, tool_Phase2, tools_Neural, tools_Ordered; //Vectors to store the processed tools
+	vector<Rect> tools, tools_Overlap, tools_Phase1, tools_Phase2, tools_Neural, tools_Ordered; //Vectors to store the processed tools
 	double rect_Overlap_rat;
 	int cascade_Count;
 	string mode_V_cmd;
@@ -130,7 +130,7 @@ public:
 	int detectProcess(){
 		cout << "VIZ: Frame reading started..." << endl;
 		if ( frame.empty() == 0 ) {
-			tools_Ordered = detectAndDisplay( frame );
+			tools_Ordered = detectCascade( frame );
 			//Apply separation test
 			if( !separationTest(tools_Ordered) ){
 				cout << "VIZ: Separation test failed!" << endl;
@@ -157,22 +157,21 @@ public:
 		if ( frame.empty() == 0 ) {
 			//Run Cascade 1
 			tools_Phase1 = detectCascade( frame );
-			
+			cout << "Phase1 size " << tools_Phase1.size() << endl;			
 			//Overlap detection (output: tools_overlap)
 			//If number of tools > 1, run overlap detection (keep the largest)
 			if (tools_Phase1.size() >= 2) {
 				//Remove overlaps
-				if ( !calcRectOverlap(tools, frame) ) {
-					cout << "VIZ: Overlap detection failed!!!" << endl;
-				}
+				tools_Overlap = calcRectOverlap(tools_Phase1, frame);
+				cout << "overlap size " << tools_Overlap.size() << endl;
 			}
 			
 			//Run Cascade2
-			tools_Phase2 = detectCascade( frame , tools_Overlap );
+			tools_Phase2 = detectCascade_second( frame , tools_Overlap );
 			
-			//Run NN on tools_Phase2
-			tools_Neural = nnTools( frame , tools_Phase2 );
 			
+
+			/*
 			//Sort the NN-identified tools
 			tools_Ordered = sortTools( tools_Neural );
 			
@@ -190,6 +189,7 @@ public:
 					return 0;
 				}		
 			}
+			*/
 		} else {
 			cout << "VIZ: Frame is empty. Returning..." << endl;
 			return 0;
@@ -258,7 +258,7 @@ private:
 	vector<Rect> detectCascade( Mat frame_gray )
 	{
 	    //Run Cascade to detect tooltips
-		casClassifier.detectMultiScale( frame_gray, tools, 1.005, 5, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
+		casClassifier.detectMultiScale( frame_gray, tools, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
 		return tools;
 	}
 	
@@ -267,32 +267,68 @@ private:
 	/** @function detectCascade_second */
 	//Second Cascade function
 	vector<Rect> detectCascade_second( Mat frame_gray , vector<Rect> tools_Phase1 ) {
-		//Clear tools vector (output) before filling it
-		tools.clear();
 		//Local vars
-		vector<Rect> tools_Phase2_tmp;
+		vector<Rect> tools_Sec;
+		
+		cout << "Int detect size: " << tools_Phase1.size() << endl;
 		//Loop among the Phase_1 tools
 		for( size_t i = 0; i < tools_Phase1.size(); i++ ){
+			//Local vars
+			vector<Rect> tools_Phase2_tmp, tools_Phase2_toNN;
 			//Run Cascade inside the detected tooltips
 			Mat toolROI = frame_gray( tools_Phase1[i] );
 			casClassifier.detectMultiScale( toolROI, tools_Phase2_tmp, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
 			//If tool(s) detected, append all at the end of the "tools"
 			if (tools_Phase2_tmp.empty() == 0) {
 				//Add the original (Phase1 tool) to tools
-				tools.push_back( tools_Phase1[i] );
+				tools_Phase2_toNN.push_back( tools_Phase1[i] );
 				//Add all detected tools to tools vector
 				for (int j = 0; j < tools_Phase2_tmp.size(); j++) {
 					//Calculate the actual tool_Phase2 coordinate
 					tools_Phase2_tmp[j].x += tools_Phase1[i].x;
 					tools_Phase2_tmp[j].y += tools_Phase1[i].y;
-					tools.push_back( tools_Phase2_tmp[j] );
+					tools_Phase2_toNN.push_back( tools_Phase2_tmp[j] );
 				}
 			} else {
 				//Add "only" the original (Phase1 tool) to tools if nothing detected inside it
-				tools.push_back( tools_Phase1[i] );
+				tools_Phase2_toNN.push_back( tools_Phase1[i] );
 			}
+			//Run NN on tools_Phase2
+			tools_Neural = nnTools( frame , tools_Phase2_toNN );
+			cout << "Neural size: " << tools_Neural.size() << endl;
+			//Keep the smallest tool after neural
+			if (tools_Neural.empty() == 0) {
+				Rect tools_NN_smallest = tools_Neural[0];
+				if ( tools_Neural.size() > 1 )
+				{
+					for (int k = 1; k < tools_Neural.size(); k++) {
+						if ( tools_Neural[k-1].area() - tools_Neural[k].area() >= 0 ) {
+							tools_NN_smallest = tools_Neural[k];
+						}
+					}
+				}
+				//Append the smallest NN-validation among the second detected tools
+				tools_Sec.push_back(tools_NN_smallest);
+			}
+			
+			if (tools_Sec.empty() == 0)
+			{
+				for (int r = 0; r < tools_Sec.size(); r++)
+				{
+					//Draw the second detection results
+	  	    		rectangle(frame, Point(tools_Sec[r].x, tools_Sec[r].y), Point(tools_Sec[r].x + tools_Sec[r].width, tools_Sec[r].y + tools_Sec[r].height), Scalar(0,255,0), 2);
+				}
+			}
+			
+	  	    //Clear internal vars
+	  	    tools_Phase2_tmp.clear();
+	  	    tools_Phase2_toNN.clear();
+	  	    tools_Neural.clear();
 		}
-		return tools;
+		cout << "Second detect size: " << tools_Sec.size() << endl;
+		vector<Rect> tools_Sec_Out = tools_Sec;
+		tools_Sec.clear();
+		return tools_Sec_Out;
 	}
 	
 	
@@ -308,13 +344,11 @@ private:
 		Mat test_input_real = Mat::zeros(1,no_of_in_layers,CV_64F);
 		Mat img_Rect = _frame;
 		Mat nn_Img = _frame;
-		vector<Rect> tools_Neural_local;
+		vector<Rect> tools_Neural_local, tools_Neural_out;
 		
 		//Run NN for each rectangle
 	    for( size_t i = 0; i < tools.size(); i++ ){
-			//Draw rectangle around tooltips
-	  	    rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(255,0,0), 2);
-	  	    
+	    	//Print the number of detections
 	  	    printf("i = %d\n", (int)i + 1);
 
 	        //NN transformations
@@ -329,15 +363,15 @@ private:
 			//Crop the last extra entries of data_mean_vec
 	        data_mean_vec.resize(min_W*min_L);
 			//Normalization
-	        for (int i = 0; i < data_mean_vec.size(); i++) {
-	        	toolsColTemp[i] = toolsColTemp[i] - data_mean_vec[i];
+	        for (int j = 0; j < data_mean_vec.size(); j++) {
+	        	toolsColTemp[j] = toolsColTemp[j] - data_mean_vec[j];
 	        }
 
 	        test_input = Mat::zeros(no_of_in_layers,1,CV_64F);
-	        for (int i = 0; i < no_of_in_layers; i++) {
+	        for (int k = 0; k < no_of_in_layers; k++) {
 	        	for (int j = 0; j < toolsColTemp.size(); j++)
 	        	{
-	        		test_input.at<double>(i,0) = test_input.at<double>(i,0) + pce_mat.at<double>(j,i)*toolsColTemp[j];
+	        		test_input.at<double>(k,0) = test_input.at<double>(k,0) + pce_mat.at<double>(j,k)*toolsColTemp[j];
 	        	}
 	        }
 	        //cout << "VIZ: NN prediction starting..." << endl;
@@ -349,25 +383,27 @@ private:
 	        //Show the NN prediction result for the ith tool
 	        //cout << nnResult.at<double>(0,0) << endl;
 	        if (nnResult.at<double>(0,0) > 0.75) {
-	        	rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(0,0,255), 2); 
+	        	//Store the NN identified tools in tools_Neural
+				tools_Neural_local.push_back( tools[i] );
+	        	//rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(0,0,255), 2); 
 	        	//cout << "VIZ: Tool detected with NN" << endl;
 	        }
 	        toolsColTemp.clear();
 	    }
 		
-		//Store the NN identified tools in tools_Neural
-		tools_Neural_local = tools;
+		tools_Neural_out = tools_Neural_local;
 	    //Clear tools
 	    tools.clear();
+	    tools_Neural_local.clear();
 	    //Return the sorted tools
-	    return tools_Neural_local;
+	    return tools_Neural_out;
 	}
 
 	
 	/** @function calcRectOverlap */
 	//Calculate box overlapping: if two rectangles overlap more than rect_Overlap_rat
 	//remove the bigger box
-	int calcRectOverlap(vector<Rect> tools, Mat _frame){
+	vector<Rect> calcRectOverlap(vector<Rect> tools, Mat _frame){
 		//Calculate overlap and store non-overlapping in tools_Overlap
 		vector<Rect> tools_Overlap = tools;
 		if (tools.size() >= 2) {
@@ -391,20 +427,22 @@ private:
 			//Show non-overlapped detections with green
 			for (int i = 0; i < tools_Overlap.size(); i++)
 			{
-				int colorRect [3]; colorRect[0] = 0; colorRect[1] = 255; colorRect[2] = 0;
-				drawRect( frame, tools_Overlap, colorRect );
+				/*
+				int colorRect [3];
+				colorRect[0] = 255; colorRect[1] = 0; colorRect[2] = 0;
+				drawRect( frame, tools_Overlap[i], colorRect );
+				*/
 			}
-			return 1;
+			return tools_Overlap;
 		} else {
 			cout << "ERR: Number of tools detected not enough for overlap test!!!" << endl;
-			return 0;
 		}
 	}
 	
 	
 	/** @function sortTools */
 	//Sort tools based on horizontal pose
-	vector<Rect> sortTools ( Mat tools_for_sort ) {
+	vector<Rect> sortTools ( vector<Rect> tools_for_sort ) {
 		//Local vars
 		vector<Rect> tools_Ordered_local;
 		tools_Ordered_local.push_back( tools_for_sort[0] );
@@ -549,8 +587,8 @@ private:
 	
 	/** @function drawRect */
 	//Rectangle drawing function
-	void drawRect( Mat frame , vector<Rect> tools , int colorOrder ) {
-		rectangle(frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(colorOrder[0],colorOrder[1],colorOrder[2]), 2);
+	void drawRect( Mat frame , Rect tool , int colorOrder[] ) {
+		rectangle(frame, Point(tool.x, tool.y), Point(tool.x + tool.width, tool.y + tool.height), Scalar(colorOrder[0],colorOrder[1],colorOrder[2]), 2);
 	}
 
 

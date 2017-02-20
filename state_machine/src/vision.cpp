@@ -99,6 +99,7 @@ int main(int argc, char **argv)
 		} else if (vizlibObj.mode_V_cmd == "detectTools") {
 			//Tool detection mode: Detect 6 tools and if found return
 			if ( vizlibObj.level_Count <= vizlibObj.n_Level-1 ) {
+				cout << "/fa,msdnlandfkad" << endl;
 				int detect_Res = vizlibObj.detectAndIdent();
 				mode_Viz.data = "detectingTools";
 			} else {
