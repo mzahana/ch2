@@ -17,7 +17,6 @@
 
 //Vision classes
 #include "VizLibrary.cpp"
-#include "IdentifySize.cpp"
 
 
 using namespace std;
@@ -41,6 +40,9 @@ int main(int argc, char **argv)
 	//Variables published
 	std_msgs::String mode_Viz;
 	std_msgs::Int32 finished_V;
+	std_msgs::Int32 pin_Number;
+	std_msgs::Int32 valve_Size;
+
 	
 	//SUBSCRIBE
 	//Image transport object
@@ -59,6 +61,10 @@ int main(int argc, char **argv)
 	ros::Publisher pub_v_fin = node_Viz.advertise<std_msgs::Int32>("task_v_main",100);
 	//Pixel difference publisher
 	ros::Publisher pub_v_pixel = node_Viz.advertise<geometry_msgs::Twist>("pixel_difference",100);
+	//Pin number publisher
+	ros::Publisher pub_v_pin = node_Viz.advertise<std_msgs::Int32>("pin_number",100);
+	//Valve size publisher
+	ros::Publisher pub_v_size = node_Viz.advertise<std_msgs::Int32>("valve_size",100);
 	
 	
 	//Main Loop
@@ -96,16 +102,31 @@ int main(int argc, char **argv)
 				mode_Viz.data = "aligningValve";
 			}
 			pub_v_pixel.publish(vizlibObj.xyzPxMsg);
-		} else if (vizlibObj.mode_V_cmd == "detectTools") {
+		} else if (vizlibObj.mode_V_cmd == "valveSizing") {
+			//Valve sizing
+			valve_Size.data = vizlibObj.valve_Size_Detected;
+			//Valve size publisher
+			pub_v_size.publish(valve_Size);
+			//Update the current mode
+			mode_Viz.data = "sizingDone";
+		} else if ((mode_Viz.data != "toolsSized") && (vizlibObj.mode_V_cmd == "detectTools")) {
 			//Tool detection mode: Detect 6 tools and if found return
-			if ( vizlibObj.level_Count <= vizlibObj.n_Level-1 ) {
-				cout << "/fa,msdnlandfkad" << endl;
-				int detect_Res = vizlibObj.detectAndIdent();
+			int detect_Res = vizlibObj.detectAndIdent();
+			//If executed n_Level detection, publish the pin_number
+			if ( (vizlibObj.checkDetection == 0) && (vizlibObj.level_Count <= vizlibObj.n_Level - 1 )) {
+				//Update the current mode
 				mode_Viz.data = "detectingTools";
 			} else {
-				mode_Viz.data = "toolDetectionFinished";
+				pin_Number.data = vizlibObj.pin_Number_Detected;
+				//Pin number publisher
+				pub_v_pin.publish(pin_Number);
+				//Update the current mode
+				mode_Viz.data = "toolsSized";
+				cout << "FINISHED!!!!!!!!!!" << endl;
+				cout << endl;
 			}
 		} else if (vizlibObj.mode_V_cmd == "alignCorrectTool") {
+			/*
 			//Arm approached the correct tool, align the camera with the tool
 			int detect_Res = vizlibObj.detectProcess();
 			//If the tool is detected, send the pixel differences to the arm
@@ -117,6 +138,8 @@ int main(int argc, char **argv)
 					mode_Viz.data = "correctAligned";
 				}
 			}
+			*/
+			mode_Viz.data = "correctAligned";
 		}
 		
 		

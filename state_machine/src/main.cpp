@@ -30,10 +30,11 @@ int main(int argc, char **argv)
 	//Mode select class
 	//Manages current mode based on state/information flow
 	//Initialize with desired system state
-	ModeSelect modeObj ( "Idle" , "Idle" , "detectTools" , "Idle" );
+	ModeSelect modeObj ( "Idle" , "Idle" , "Idle" , "gripTool" );
 	
 	//Define objects
 	//HuskyLibrary huskyObj;
+	//GripLibrary gripperObj;
 	
 	//Subscribe
 	//Current modes

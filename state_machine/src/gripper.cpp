@@ -39,14 +39,14 @@ void gripCmdCb(const std_msgs::String::ConstPtr& msgCmdGrip)
 {
 	mode_G_cmd = msgCmdGrip -> data;
 }
-
+/*
 //Gripper command callback
 void gripImuCb(const geometry_msgs::Vector3::ConstPtr& msgImuGrip)
 {
 	grip_Imu[0] = msgImuGrip -> x;
 	grip_Imu[1] = msgImuGrip -> y;
 	grip_Imu[2] = msgImuGrip -> z;
-}
+}*/
 
 //Gripper pinch number callback
 void gripPinchCb(const std_msgs::Int32::ConstPtr& msgPinchGrip)
@@ -72,6 +72,8 @@ int main(int argc, char **argv)
 	std_msgs::Int32 grip_cmd_ard; //Grip commands sent to Arduino
 
 	finished_G.data = 1; //Start with confirmation
+	//Local vars
+	int grip_Count = 0;
 	
 	//SUBSCRIBE
 	//Gripper "actual" mode (coming from h/w)
@@ -79,16 +81,19 @@ int main(int argc, char **argv)
 	//Gripper command mode (coming from SM)
 	ros::Subscriber sub_cmd_grip = node_Grip.subscribe<std_msgs::String>("cmdmode_grip", 100, gripCmdCb);
 	//Gripper IMU (coming from h/w)
-	ros::Subscriber sub_imu_grip = node_Grip.subscribe<geometry_msgs::Vector3>("imu_gripper", 100, gripImuCb);
+	//ros::Subscriber sub_imu_grip = node_Grip.subscribe<geometry_msgs::Vector3>("imu_gripper", 100, gripImuCb);
 	//Gripper pinch command (coming from h/w)
 	ros::Subscriber sub_pinch_fb = node_Grip.subscribe<std_msgs::Int32>("pinch_feedback", 100, gripPinchCb);
 	
 	
 	//PUBLISH
 	//Current gripper mode published to SM
-	ros::Publisher pub_v_mode = node_Grip.advertise<std_msgs::Int32>("mode_system_grip",100);
+	ros::Publisher pub_g_mode_SM = node_Grip.advertise<std_msgs::String>("mode_grip_str",100);
+	//Current gripper cmd published to Arduino
+	ros::Publisher pub_g_mode = node_Grip.advertise<std_msgs::Int32>("mode_system_grip",100);
 	//Pinch number
 	ros::Publisher pub_pinch = node_Grip.advertise<std_msgs::Int32>("pinch",100);
+	
 	//Finished task confirmation published to SM
 	ros::Publisher pub_taskFinish = node_Grip.advertise<std_msgs::Int32>("task_g_main",100);
 	
@@ -100,25 +105,32 @@ int main(int argc, char **argv)
 		if (mode_G_cmd == "Idle") {
 			//Gripper is supposed to await for command
 			grip_cmd_ard.data = 0; //Sends the Idle command to Arduino
+			
+			mode_Grip.data = "Idle";
+			
 			if (grip_ActMode == 0) {
 				//Check if gripper is really in Idle
-				mode_Grip.data = "Idle";
 				cout << "GRIP: Waiting for command..." << endl;
 			} else {
 				cout << "GRIP: Gripper is not in Idle!!!" << endl;
 			}
 			finished_G.data = 1; //Ready to get task
-		} else if (mode_G_cmd == "pinch") {
+		}
+		else if (mode_G_cmd == "pinch") {
 			//Gripper pinch TBA
 			mode_Grip.data = "pinching";
 			cout << "GRIP: Gripper performing pinching..." << endl;
-		} else if (mode_G_cmd == "gripTool") {
+		} else if ((mode_G_cmd == "gripTool") && (grip_Count == 0)) {
 			//Grip the tool
 			mode_Grip.data = "gripping";
 			//Perform gripping by sending command to Arduino
 			grip_cmd_ard.data = 2; //Sends the grip command to Arduino
-		} else if (grip_ActMode == 3) {
-			//Gripper is closing, we are waiting for gripper confirmation
+			cout << "GRIP: Gripper is closing..." << endl;
+			grip_Count = 1;
+		}
+		
+		if (grip_ActMode == 3) {
+			//Gripper is still closing, we are waiting for gripper confirmation
 			mode_Grip.data = "Gripping";
 			cout << "GRIP: Gripper is closing..." << endl;
 		} else if (grip_ActMode == 4) {
@@ -127,14 +139,29 @@ int main(int argc, char **argv)
 			//Tell SM that vision finished the task
 			finished_G.data = 1;
 			cout << "GRIP: Gripper closed..." << endl;
+		} else if (grip_ActMode == 5) {
+			//Gripper is closing, we are waiting for gripper confirmation
+			mode_Grip.data = "openingGripper";
+			cout << "GRIP: Gripper is opening..." << endl;
+		} else if (grip_ActMode == 6) {
+			//Gripper is closed, inform SM
+			mode_Grip.data = "gripper";
+			//Tell SM that vision finished the task
+			finished_G.data = 1;
+			cout << "GRIP: Gripper closed..." << endl;
 		}
+		
+		
 		
 		//Publish task finish confirmation
 		pub_taskFinish.publish(finished_G);
-		//Publish the current vision mode
-		pub_v_mode.publish(mode_Grip);
+		sleep(5);
+		//Publish the current coomand to Arduino
+		pub_g_mode.publish(grip_cmd_ard);
+		//Publish the current gripper mode
+		pub_g_mode_SM.publish(mode_Grip);
 		//Show the current vision mode
-		cout << "GRIP: mode: " << mode_Grip.data << endl;
+		//cout << "GRIP: mode: " << mode_Grip.data << endl;
 		
 		//Spin and sleep
 		ros::spinOnce();
