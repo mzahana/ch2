@@ -30,7 +30,7 @@ int main(int argc, char **argv)
 	//Mode select class
 	//Manages current mode based on state/information flow
 	//Initialize with desired system state
-	ModeSelect modeObj ( "Idle" , "Idle" , "Idle" , "gripTool" );
+	ModeSelect modeObj ( 10 , "Idle" , "Idle" , "Idle" );
 	
 	//Define objects
 	//HuskyLibrary huskyObj;
@@ -38,10 +38,10 @@ int main(int argc, char **argv)
 	
 	//Subscribe
 	//Current modes
-	//ros::Subscriber sub_H_mode = node_Sm.subscribe<std_msgs::String>("mode_h_main", 1000, &ModeSelect::mode_Husky_Cb, &odeObj);
+	ros::Subscriber sub_H_mode = node_Sm.subscribe<std_msgs::Int32>("mode_h_main", 1000, &ModeSelect::mode_Husky_Cb, &modeObj);
 	ros::Subscriber sub_U_mode = node_Sm.subscribe<std_msgs::String>("mode_u_main", 1000, &ModeSelect::mode_UR_Cb, &modeObj);
 	ros::Subscriber sub_V_mode = node_Sm.subscribe<std_msgs::String>("mode_v_main", 1000, &ModeSelect::mode_Viz_Cb, &modeObj);
-	ros::Subscriber sub_G_mode = node_Sm.subscribe<std_msgs::String>("mode_g_main", 1000, &ModeSelect::mode_Grip_Cb, &modeObj);
+	ros::Subscriber sub_G_mode = node_Sm.subscribe<std_msgs::String>("mode_grip_str", 1000, &ModeSelect::mode_Grip_Cb, &modeObj);
 	//Task finished confirmations
 	//ros::Subscriber sub_H_task = node_Sm.subscribe<std_msgs::Int32>("task_h_main", 1000, &ModeSelect::task_Husky_Cb, &odeObj);
 	ros::Subscriber sub_U_task = node_Sm.subscribe<std_msgs::Int32>("task_u_main", 1000, &ModeSelect::task_UR_Cb, &modeObj);
@@ -63,6 +63,10 @@ int main(int argc, char **argv)
 		//Run the modeSwitch fcn if there is no current active job
 		if ( (modeObj.finished_H == 1) && (modeObj.finished_U == 1) && (modeObj.finished_V == 1) && (modeObj.finished_G == 1) ) {
 			modeObj.modeSwitch();
+			//Show system state
+			cout << "MAIN: States: H[" << modeObj.mode_Husky << "], U[" << modeObj.mode_UR << "], V[" << modeObj.mode_Viz << "], G[" << modeObj.mode_Grip_SM << endl;
+                	cout << "MAIN: Commands: H[" << modeObj.M_h << "] - U[" << modeObj.M_u << "] - V[" << modeObj.M_v << "] - G[" << modeObj.M_g << "]" << endl;
+                	cout << endl;
 		}
 		
 		//Publish the commanded system mode
@@ -70,11 +74,6 @@ int main(int argc, char **argv)
 		pub_modeUr.publish(modeObj.M_u);
 		pub_modeViz.publish(modeObj.M_v);
 		pub_modeGrip.publish(modeObj.M_g);
-
-		//Show system state
-		cout << "MAIN: States: H[" << modeObj.mode_Husky << "], U[" << modeObj.mode_UR << "], V[" << modeObj.mode_Viz << "], G[" << modeObj.mode_Grip_SM << "]" << endl;
-		cout << "MAIN: Commands: H[" << modeObj.M_h << "] - U[" << modeObj.M_u << "] - V[" << modeObj.M_v << "] - G[" << modeObj.M_g << "]" << endl;
-		cout << endl;
 
 		//Spin and sleep
 		ros::spinOnce();

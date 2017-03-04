@@ -135,6 +135,8 @@ include_directories(
 
 ## Declare a C++ executable
 add_executable(main src/main.cpp)
+add_executable(husky src/husky.cpp)
+add_executable(gripper src/gripper.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
@@ -142,6 +144,14 @@ add_executable(main src/main.cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(main
+  ${catkin_LIBRARIES}
+)
+
+target_link_libraries(husky
+  ${catkin_LIBRARIES}
+)
+
+target_link_libraries(gripper
   ${catkin_LIBRARIES}
 )
 

@@ -168,6 +168,6 @@ int main(int argc, char **argv)
 		r.sleep();
 	}
 	
-	cv::destroyAllWindows();
-	ROS_INFO("State_machine::main.cpp::Finished with no error.");
+	
+	ROS_INFO("State_machine::gripper.cpp::Finished with no error.");
 }

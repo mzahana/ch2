@@ -15,15 +15,18 @@ from geometry_msgs.msg import *
 from math import *
 
 def setParams():
+	
 
     rospy.set_param('/ur5/onHusky',True)
     rospy.set_param('/ur5/poseWakeup',[0.0,-np.pi/2.0,0.0,-np.pi/2.0,0.0,0.0])
-    rospy.set_param('/ur5/poseReady',[0.0,-0.75*np.pi,0.75*np.pi,-np.pi,-0.50*np.pi,0.0])
+    q6offset = 15.0*np.pi/180.0 # offset due to gripper mounting 17deg
+    rospy.set_param('/ur5/q6offset',q6offset)
+    rospy.set_param('/ur5/poseReady',[0.0,-0.8*np.pi,0.8*np.pi,-np.pi,-0.50*np.pi,q6offset])
     rospy.set_param('/ur5/vMax',100.0) # maximum endpoint velocity in mm/s
     rospy.set_param('/ur5/fbRate',20.0)
     rospy.set_param('/ur5/gazeboOrder',[2,1,0,3,4,5]) # order of joints in gazebo sim
     rospy.set_param('/ur5/jointLengths',[86.900,111.70,425.24,393.94]) # dz, l1, l2, l3 (empirical)
-    # rospy.set_param('/ur5/jointLengths',[89.159,109.15,425.00,392.25]) # dz, l1, l2, l3 (internet)
+
 
 class ur5Class():
     def __init__(self):
@@ -45,17 +48,47 @@ class ur5Class():
         self.buttons = [False]*4
         self.vMax = rospy.get_param('/ur5/vMax')
         self.q5offset = 0.0 # wrist rotation offset
+        self.q6offset = rospy.get_param('/ur5/q6offset')
+        
 
-        self.pixel_x = 0.0
-        self.pixel_y = 0.0
-        self.pixel_z = 0.0
+        self.force = self.genXYZ()
+        self.torque = self.genXYZ()
+        
+
+        self.pixel_x 	= 0.0
+        self.pixel_y 	= 0.0
+        self.pixel_z 	= 0.0
+        self.ur_mode 	= 0
+	self.PinNumber  = 0
+	self.ToolSize   = 0
+	self.ToolFace   = ""
+	self.camOffset  = 0
+	self.ValveAngle  = 0
+
+
+      # Subscribe to state machine modes
+        self.subSm = rospy.Subscriber('/cmdmode_ur', String, self.cbsm)
+	self.subPinNumber = rospy.Subscriber('/pin_number', Int32, self.cbpin)
+	self.subValveSize = rospy.Subscriber('/valve_sizeUr', Int32, self.cbvs)
+        self.subValveAngle = rospy.Subscriber('/valve_angleUr', Int32, self.cbva)
+
+	self.subToolFace = rospy.Subscriber('/tool_face', String, self.cbtf)
+        self.subCamOffset = rospy.Subscriber('/cam_offset', Float64, self.cbcamoffset)
+
 
         # Subscribe to joint positions and velocities
         self.subJoints = rospy.Subscriber('/joint_states', JointState, self.cbJoints)
 
 	   # Subscribe to vision coordinate differences
-        self.subCoord = rospy.Subscriber('/pixelDiff', Twist, self.cbPixel)
+        self.subCoord = rospy.Subscriber('/pixel_difference', Twist, self.cbPixel)
 
+
+
+
+        # Subscribe to force-torque sensor
+        self.subFT = rospy.Subscriber('/robotiq_force_torque_wrench', WrenchStamped, self.cbFT)
+
+   
         # Create an actionLib client & message variables
         # Prepare to publish goals
         if rospy.get_param('/ur5/onHusky'):
@@ -73,6 +106,73 @@ class ur5Class():
         self.subSwitch2 = rospy.Subscriber('/switch2', Bool, self.cbSwitch2)
         self.subSwitch3 = rospy.Subscriber('/switch3', Bool, self.cbSwitch3)
         self.subSwitch4 = rospy.Subscriber('/switch4', Bool, self.cbSwitch4)
+
+
+
+    class genXYZ: # generic xyz class
+        def __init__(self):
+            self.x = 0.0
+            self.y = 0.0
+            self.z = 0.0
+
+
+
+
+    def cbsm(self,msg):
+        if not msg == None:
+            self.ur_mode = msg.data
+            print "ur commanded mode is: ",self.ur_mode 
+
+
+    def cbtf(self,msg):
+        if not msg == None:
+            self.ToolFace = msg.data
+            print "Tool Face is: ",self.ToolFace 
+
+
+
+
+
+
+    def cbpin(self,msg):
+        if not msg == None:
+            self.PinNumber = msg.data
+            print "The tool in Pin number : ", self.PinNumber
+
+    def cbvs(self,msg):
+        if not msg == None:
+            self.ToolSize= msg.data
+
+            print "The tool size : ", self.ToolSize
+
+    def cbva(self,msg):
+        if not msg == None:
+            self.ValveAngle= msg.data
+
+   
+
+
+
+    def cbcamoffset(self,msg):
+        if not msg == None:
+            self.camOffset= msg.data
+            print "Cam offset is: ", self.camOffset
+
+
+
+
+
+    def cbFT(self,msg):
+        if not msg == None:
+            self.force.x = msg.wrench.force.x
+            self.force.y = msg.wrench.force.y
+            self.force.z = msg.wrench.force.z
+            self.torque.x = msg.wrench.torque.x
+            self.torque.y = msg.wrench.torque.y
+            self.torque.z = msg.wrench.torque.z 
+
+
+ 
 
     def cbJoints(self,msg):
         if not msg == None:
@@ -165,6 +265,165 @@ class ur5Class():
 
         return status
 
+
+
+
+
+############## imported from Jeff's new modefication for rotation ######3
+#####################################################################3##
+        
+        
+
+    # commanded wrist location
+    # calls cobraHead and accounts for q5offset & q6offset
+    def xyzGotoRotate(self,x,y,z,q6,velocity):
+        # q6 is in addition to q6offset
+        # returns flag for successful execution
+
+        flag, q1, q2, q3 = self.wristIK(x,y,z)
+        if not flag:
+            return flag # = False
+        else:
+            Q = self.jointPosition
+            xNow, yNow, zNow = self.wristFK(Q[0],Q[1],Q[2])
+            distance = sqrt( (x - xNow)**2 + (y - yNow)**2 + (z - zNow)**2)
+            if velocity > self.vMax:
+                print "Reducing requested velocity: ", velocity, " to vMax: ", self.vMax
+                velocity = self.vMax
+            dT = distance/velocity
+            q4, q5 = self.cobraHead(q1,q2,q3)
+            Qtarget = [q1, q2, q3, q4, q5, q6 + self.q6offset]
+            status = self.jointGoto(Qtarget,dT)
+            if not status == 5:
+                flag = True
+            else:
+                flag = False
+            return flag
+
+    # commanded shift in wrist location using wrist coordinates
+    # calls cobraHead and accounts for q5offset & q6offset
+    def xyzShiftRotate2(self,delx,dely,delz,delq6,velocity):
+        Q = self.jointPosition
+        q5o = self.q5offset
+        x,y,z = self.wristFK(Q[0],Q[1],Q[2])
+        xNew = x + delx*cos(q5o) - dely*sin(q5o)
+        yNew = y + delx*sin(q5o) + dely*cos(q5o)
+        zNew = z + delz
+
+        q6now = Q[5] - self.q6offset # value relative to offset
+
+        flag = self.xyzGotoRotate(xNew,yNew,zNew,q6now+delq6,velocity)
+        return flag
+        
+
+
+
+
+############## The way points functions #######################
+######################################################
+#####################################################
+    def jointGotoWayPoints(self,QtargetWayPoints,n,dT):
+        thePoints=[]
+        retry = True
+        
+        while retry:
+            for i in range(0,n):
+                #print( "the Q points",QtargetWayPoints[i])
+                targetPoint = JointTrajectoryPoint(positions=QtargetWayPoints[i], velocities=[0]*6,
+                        time_from_start=rospy.Duration((i+1)*dT))
+                thePoints.append(targetPoint)
+            print ("the gool points ",thePoints)
+            self.theGoal.trajectory.points = thePoints
+
+            self.theGoal.trajectory.header.stamp = rospy.Time.now()
+
+            self.client.send_goal(self.theGoal)
+            
+            assessing = True
+            while assessing:
+                status = self.client.get_state()
+                if status > 0:
+                    assessing = False
+
+            if status == 5:
+                print "***REJECTED***"
+                print "Retrying after 5 seconds..."
+                time.sleep(5.0)
+            else:
+                retry = False
+
+            return status
+
+################################################################
+###############################################################
+
+    def xyzShiftWayPoints(self,delxT,delyT,delzT,n,velocity):
+
+        if velocity > self.vMax:
+            print "Reducing requested velocity: ", velocity, " to vMax: ", self.vMax
+            velocity = self.vMax
+
+        distance = sqrt(delxT**2 + delyT**2 + delzT**2)
+        dT = distance/velocity
+        dTinterim = dT/n
+
+        deltax = delxT/n
+        deltay = delyT/n
+        deltaz = delzT/n
+
+        # returns flag for successful execution
+        delx=0
+        dely=0
+        delz=0
+        QtargetWayPoints=[]
+
+        Q = self.jointPosition
+        q5o = self.q5offset
+        xNow, yNow, zNow = self.wristFK(Q[0],Q[1],Q[2])
+                   
+        for i in range(0, n):
+            delx = delx + deltax
+            dely = dely + deltay
+            delz = delz + deltaz                                        
+
+            xNew = xNow + delx*cos(q5o) - dely*sin(q5o)
+            yNew = yNow + delx*sin(q5o) + dely*cos(q5o)
+            zNew = zNow + delz
+
+            flag2, q1, q2, q3 = self.wristIK(xNew,yNew,zNew)
+
+            if not flag2:
+                return flag2 # = False
+            else:
+                q4, q5 = self.cobraHead(q1,q2,q3)
+                Qtarget = [q1, q2, q3, q4, q5, self.q6offset]
+                QtargetWayPoints.append(Qtarget) 
+
+        #print("the list ", QtargetWayPoints) 
+        #print("lenth of the list", len( QtargetWayPoints))            
+
+        status = self.jointGotoWayPoints(QtargetWayPoints,n,dTinterim)
+
+        if not status == 5:
+            flag = True
+        else:
+            flag = False
+        return flag
+        
+        
+
+################end of the way points functions###########################
+##########################################################################
+##########################################################################
+##########################################################################
+
+
+
+
+
+
+
+
         #self.client.wait_for_result()
 
     # commanded wrist location
@@ -172,20 +431,18 @@ class ur5Class():
         # returns flag for successful execution
 
         flag, q1, q2, q3 = self.wristIK(x,y,z)
-        print "Q_forward: ", q1, q2, q3
         if not flag:
             return flag # = False
         else:
             Q = self.jointPosition
             xNow, yNow, zNow = self.wristFK(Q[0],Q[1],Q[2])
-            print "zNow: ", zNow
             distance = sqrt( (x - xNow)**2 + (y - yNow)**2 + (z - zNow)**2)
             if velocity > self.vMax:
                 print "Reducing requested velocity: ", velocity, " to vMax: ", self.vMax
                 velocity = self.vMax
             dT = distance/velocity
             q4, q5 = self.cobraHead(q1,q2,q3)
-            Qtarget = [q1, q2, q3, q4, q5, 0.0]
+            Qtarget = [q1, q2, q3, q4, q5, self.q6offset]
             status = self.jointGoto(Qtarget,dT)
             if not status == 5:
                 flag = True
@@ -200,10 +457,11 @@ class ur5Class():
         x,y,z = self.wristFK(Q[0],Q[1],Q[2])
         xNew = x + delx*cos(q5o) - dely*sin(q5o)
         yNew = y + delx*sin(q5o) + dely*cos(q5o)
-        zNew = z
+        zNew = z + delz
 
         flag = self.xyzGoto(xNew,yNew,zNew,velocity)
         return flag
+
 
 
     def cancel(self):
@@ -258,7 +516,7 @@ class ur5Class():
         reach = l2 + l3
 
         flag = False
-        if x > -25.0:
+        if x > -10.0:
             print "IK error: x-axis"
         elif sqrt(x**2 + y**2 + (z-dz)**2) > 0.95*reach:
             print "IK error: Reach"
@@ -312,4 +570,3 @@ class ur5Class():
             q3ur5 = -q3 - q2ur5
 
             return flag, q1, q2ur5, q3ur5
-
