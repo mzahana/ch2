@@ -30,7 +30,7 @@ public:
 	String cascade_name, video_name, window_name, data_mean, pceNN, nnInput_Data, nn_Output;
 	CascadeClassifier casClassifier;
 	vector<Rect> tools, tools_Overlap, tools_Phase1, tools_Phase2, tools_Neural, tools_Ordered; //Vectors to store the processed tools
-	double rect_Overlap_rat;
+	double rect_Overlap_rat, orient_Offset;
 	int cascade_Count, pin_Number_Detected, valve_Size_Detected;
 	string mode_V_cmd;
 	int checkDetection;
@@ -571,6 +571,35 @@ private:
 	}
 
 
+	
+	
+	
+	
+	/** @function relativeSizing */
+	//Function for tool size relative ordering (Resulting vector represents the order of the sizes (1-6))
+	int relativeSizing (vector<Rect> tools_toSize){
+		//Vector to store the tool size order
+		vector<int> size_Order;
+		//Tool vector to store the size-ordered tools
+		vector<Rect> tools_SizeOrdered;
+		//Sort the tools based on sizes in descending order
+		size_Order[0] = 6;
+		//tools_SizeOrdered.push_back (tools_toSize[0]);
+		for (int i = 0; i < tools_toSize.size(); i++) {
+			if (tools_toSize[1] < tools_toSize[0]) {
+				
+			} else {
+				tools_SizeOrdered.push_back (tools_toSize[0]);
+				size_Order[i] = i+1;
+			}
+			cout << "Tool [" << i << "] size: " << size_Order[i] << endl;
+		}
+		return tool_Pin;
+	}
+	
+	
+	
+	
 	/** @function toolSizeMapping */
 	//Mapping function for tool sizes
 	int toolSizeMapping(vector<double> tool_Lengths){
@@ -629,18 +658,21 @@ private:
 	//Hough circle detection
 	void detect_circle(Mat img, Mat gray){
 		//Function vars
+		int rad_nominal = 60; //Valve's nominal radius
+		int rad_min = floor(7*rad_nominal/8);
+		int rad_max = ceil(9*rad_nominal/8);
 		vector<double> radius;
 		Point center_Valve;
 		//Check if the frame is empty
 		if (img.empty() == 0) {
 			//Crop the image ROI (at the center)
-			Rect circle_ROI (img.cols/4 , img.rows/4 , img.cols/2 , img.rows/2);
+			Rect circle_ROI (0 , img.rows/4 , img.cols , img.rows/2);
 			gray = gray(circle_ROI);
 			//Blur the image to reduce false detections
 			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );
 			//Hough circles detection (for the radius range 52-68 pxls)
 			//Min distance between two circles centers is img.rows/4. param_1 = 200, param_2 = param_1/2
-			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, gray.rows/4, 200, 100 , 52, 68);
+			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, gray.rows/4, 200, 100 , rad_min, rad_max);
 			//For each circle, draw circle on the image
 			for( size_t i = 0; i < circles.size(); i++ )
 			{
@@ -669,6 +701,61 @@ private:
 			waitKey(1);
 		}
 	}
+	
+	
+	
+	
+	/** @function detect_pins */
+	//Hough circle detection for pins
+	void detect_pins(Mat img, Mat gray){
+		//Function vars
+		int rad_nominal = 30; //Discs' nominal radius
+		int rad_min = floor(3*rad_nominal/4);
+		int rad_max = ceil(5*rad_nominal/4);
+		vector<double> radius;
+		vector<Point> center_Pin;
+		//Check if the frame is empty
+		if (img.empty() == 0) {
+			//Crop the image ROI (upper half)
+			Rect circle_ROI (0 , 0 , img.cols , img.rows/2);
+			gray = gray(circle_ROI);
+			//Blur the image to reduce false detections
+			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );
+			//Hough circles detection (for the radius range rad_min-rad_max pxls)
+			//Min distance between two circles centers is img.rows/4. param_1 = 200, param_2 = param_1/2
+			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, gray.rows/4, 200, 100 , rad_min, rad_max);
+			//For each circle, draw circle on the image
+			for( size_t i = 0; i < circles.size(); i++ )
+			{
+				Point center(cvRound(circles[i][0]) + circle_ROI.x, cvRound(circles[i][1]) + circle_ROI.y);
+				radius.push_back( cvRound(circles[i][2]) );
+				// draw the circle center
+				circle( img, center, 3, Scalar(0,255,0), -1, 8, 0 );
+				// draw the circle outline
+				circle( img, center, radius.back(), Scalar(0,0,255), 3, 8, 0 );
+				//Store the first two circles info
+				if (circles.size() >= 2) {
+					if ( i == 0 ){
+						center_Pin[0] = center;
+					} else if ( i == 1 ) {
+						center_Pin[1] = center;
+					}
+					//Calculate the orientation offset to be sent to UR
+					orient_Offset = atan2( (center_Pin[0].y-center_Pin[1].y) , (center_Pin[0].x-center_Pin[1].x) );
+				}
+			}
+			//Clear the pushed vectors
+			radius.clear();
+			center_Pin.clear();
+			
+			//Show the image with pins circles
+			imshow( "circles_pins", img );
+			waitKey(1);
+		}
+	}
+	
+	
+	
 	
 	
 	/** @function drawRect */
