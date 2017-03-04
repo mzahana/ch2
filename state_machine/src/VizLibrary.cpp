@@ -33,7 +33,7 @@ public:
 	double rect_Overlap_rat, orient_Offset;
 	int cascade_Count, pin_Number_Detected, valve_Size_Detected;
 	string mode_V_cmd;
-	int checkDetection;
+	int checkDetection, valveSize, valveAngle, valveConfirm;
 
 
 	//IdentSize vars
@@ -65,7 +65,7 @@ public:
 	int sep_Pixel_min, sep_Pixel_max;
 	
 	//Circle detection vars
-	int pixelThres = 2;
+	int pixelThres;
 	//Vector of 3D vectors to store circles
 	vector<Vec3f> circles;
 	
@@ -91,18 +91,21 @@ public:
 		//Cascade detection number of successful 6-tool-validation
 		cascade_Count = 0;
 		checkDetection = 0;
+		orient_Offset = 0;
 		
 		//Ident variables
 		level_Count = 0;
 		n_Level = 12; i_Level = 1;
 		noOfTools = 6;
 		pin_Number_Detected = 0;
-		valve_Size_Detected = 19;
+		valve_Size_Detected = 0;
 		M_tools_X = MatrixXd::Zero(n_Level,noOfTools);
 		M_tools_Y = MatrixXd::Zero(n_Level,noOfTools);
 		M_joints = MatrixXd::Zero(n_Level,6); //6 is the number of joints
 		//Initialize the joint poses
 		for (int i = 0; i < joint_Pose.size(); i++){ joint_Pose[i] = 0; }
+
+		pixelThres = 1;
 	}
 	
 	
@@ -128,6 +131,8 @@ public:
 		frame = cv_ptr -> image;
 		cvtColor( frame, frame_gray, COLOR_BGR2GRAY );
 	}
+
+
 
 	
 	//Cascade detection function
@@ -247,6 +252,14 @@ public:
 		detect_circle(frame, frame_gray);
 	}
 
+	void detect_pinsPub(){
+		detect_pins(frame, frame_gray);
+	}
+
+	void valveSizingPublic(){
+		valveSizing(frame, frame_gray);
+	}
+
 
 
 	//Encoder Callback
@@ -256,6 +269,22 @@ public:
 		if (joint_Names[0] == "ur5_arm_shoulder_pan_joint") {
 			joint_Pose = msgJoint -> position;
 		}
+	}
+
+
+	//Valvesize confirmation Callback
+	void valveSizeCb(const std_msgs::Int32::ConstPtr& msgValve)
+	{
+		valveSize = msgValve -> data;
+		//long valveConfirm = static_cast<long>(msgValve -> z);
+		//cout << valveSize << valveAngle << valveConfirm << endl;
+	}
+
+	//Valveangle confirmation Callback
+	void valveAngleCb(const std_msgs::Int32::ConstPtr& msgAngle)
+	{
+		valveAngle = msgAngle -> data;
+		//cout << valveSize << valveAngle << valveConfirm << endl;
 	}
 
 
@@ -536,14 +565,18 @@ private:
 		}
 		cout << "VIZ: Tooltip center heights: " << M_tools_Y << endl;
 		cout << "VIZ: joint_Pose.size()s: " << joint_Pose.size() << endl;
+		/*
 		//Store the joint configurations where 6 tools detected
 		for (int j = 0; j < joint_Pose.size(); j++) {
 			M_joints (i_Level-1,j) = joint_Pose[j];
 		}
-		
+		*/
 		//If i_Level = n_Level, calculate y-axis lengths and order
 		if (i_Level == n_Level) {
 			for (int j = 0; j < noOfTools; j++) {
+				//Pass each tool measurement to the hist calculation
+				//vector<double> v_hist_out = calculateHist ( (double)M_tools_Y.col(j) );
+				//Calculate the average
 				double M_Ysum = 0;
 				for (int i = 0; i < n_Level; i++){ M_Ysum = M_Ysum + M_tools_Y (i,j); }
 				M_tools_avgY.push_back( M_Ysum/((double)n_Level) ); //Length of the jth tool's center (robot z-axis)
@@ -553,29 +586,50 @@ private:
 				cout << "VIZ: Tooltip center heights: " << endl;
 				cout << "[" << i << "] : " << M_tools_avgY[i] << endl;
 			}
-			//Find and show the correct tool pin number and size
-			
+			//Store the averaged tool sizes in tool_Lengths
 			vector<double> tool_Lengths (6,0);
 			for (int s = 0; s < tool_Lengths.size(); s++)	{
 				tool_Lengths[s] = M_tools_avgY[s];
 			}
 			pin_Number_Detected = toolSizeMapping(tool_Lengths);
+
 			checkDetection = 1;
 		}
-		
 		//Iterate
 		i_Level++;
-		cout << "i_Level-1:  " << i_Level-1 << endl;
-		//Return the current i_Level for checking stopping time of this function
+		cout << "i_Level:  " << i_Level-1 << endl;
+		//Return the current i_Level for checking termination time of this function
 		return i_Level-1;
 	}
 
 
-	
-	
-	
+
+	/** @function calculateHist */
+	/*
+	//Function for histogram calculation
+	int calculateHist (vector<double> v_hist_in){
+		//Local vars
+		int val_min = min_element(v_hist_in.begin(), v_hist_in.end());
+		int val_max = max_element(v_hist_in.begin(), v_hist_in.end());
+		//Vector to store the lengths that pass the histogram test
+		vector<double> v_hist_out_local;
+		//Calculate histogram bins
+		int num_bins = (val_max - val_min + 1);
+		for (int i = 0; i < tools_toSize.size(); i++) {
+			if (tools_toSize[1] < tools_toSize[0]) {
+				
+			} else {
+				tools_SizeOrdered.push_back (tools_toSize[0]);
+				size_Order[i] = i+1;
+			}
+			cout << "Tool [" << i << "] size: " << size_Order[i] << endl;
+		}
+	}
+
+
 	
 	/** @function relativeSizing */
+	/*
 	//Function for tool size relative ordering (Resulting vector represents the order of the sizes (1-6))
 	int relativeSizing (vector<Rect> tools_toSize){
 		//Vector to store the tool size order
@@ -583,7 +637,7 @@ private:
 		//Tool vector to store the size-ordered tools
 		vector<Rect> tools_SizeOrdered;
 		//Sort the tools based on sizes in descending order
-		size_Order[0] = 6;
+		size_Order[0] = noOfTools-1;
 		//tools_SizeOrdered.push_back (tools_toSize[0]);
 		for (int i = 0; i < tools_toSize.size(); i++) {
 			if (tools_toSize[1] < tools_toSize[0]) {
@@ -594,10 +648,8 @@ private:
 			}
 			cout << "Tool [" << i << "] size: " << size_Order[i] << endl;
 		}
-		return tool_Pin;
 	}
-	
-	
+	*/
 	
 	
 	/** @function toolSizeMapping */
@@ -642,12 +694,28 @@ private:
 			}
 			cout << "Tool [" << i << "] size: " << tool_Sizes[i] << endl;
 		}
+		//Check tool sizes: If there are two same, shift left-right
+
+		//Get the correct tool size that matches the valve size
+		cout << "valve_Size_Detected " << valve_Size_Detected << endl;
 		for (int i = 0; i < tool_Sizes.size(); i++)	{
 			if ( tool_Sizes[i] == valve_Size_Detected )	{
 				tool_Pin = i + 1;
 				cout << "Detected tool_pin number: " << tool_Pin << endl;
+				break;
 			}
 		}
+		/*
+		if (tool_Pin == 0) {
+			for (int i = 0; i < tool_Sizes.size(); i++)	{
+				if ( tool_Sizes[i] >= tool_Sizes[i-1] )	{
+					tool_Pin = i + 1;
+					cout << "Detected tool_pin number: " << tool_Pin << endl;
+					break;
+				}
+			}
+		}
+		*/
 		return tool_Pin;
 	}
 
@@ -658,25 +726,26 @@ private:
 	//Hough circle detection
 	void detect_circle(Mat img, Mat gray){
 		//Function vars
-		int rad_nominal = 60; //Valve's nominal radius
-		int rad_min = floor(7*rad_nominal/8);
-		int rad_max = ceil(9*rad_nominal/8);
+		int rad_nominal = 110; //Valve's nominal radius
+		int rad_min = floor(3*rad_nominal/4);
+		int rad_max = ceil(5*rad_nominal/4);
 		vector<double> radius;
 		Point center_Valve;
 		//Check if the frame is empty
 		if (img.empty() == 0) {
 			//Crop the image ROI (at the center)
-			Rect circle_ROI (0 , img.rows/4 , img.cols , img.rows/2);
-			gray = gray(circle_ROI);
+			//Rect circle_ROI (0 , img.rows/4 , img.cols , img.rows/2);
+			//gray = gray(circle_ROI);
 			//Blur the image to reduce false detections
 			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );
 			//Hough circles detection (for the radius range 52-68 pxls)
 			//Min distance between two circles centers is img.rows/4. param_1 = 200, param_2 = param_1/2
-			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, gray.rows/4, 200, 100 , rad_min, rad_max);
+			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, 100, 100, 50 , rad_min, rad_max);
 			//For each circle, draw circle on the image
 			for( size_t i = 0; i < circles.size(); i++ )
 			{
-				Point center(cvRound(circles[i][0]) + circle_ROI.x, cvRound(circles[i][1]) + circle_ROI.y);
+				Point center(cvRound(circles[i][0]), cvRound(circles[i][1]) );
+				//Point center(cvRound(circles[i][0]) + circle_ROI.x, cvRound(circles[i][1]) + circle_ROI.y);
 				radius.push_back( cvRound(circles[i][2]) );
 				// draw the circle center
 				circle( img, center, 3, Scalar(0,255,0), -1, 8, 0 );
@@ -707,13 +776,13 @@ private:
 	
 	/** @function detect_pins */
 	//Hough circle detection for pins
-	void detect_pins(Mat img, Mat gray){
+	double detect_pins(Mat img, Mat gray){
 		//Function vars
-		int rad_nominal = 30; //Discs' nominal radius
+		int rad_nominal = 40; //Discs' nominal radius
 		int rad_min = floor(3*rad_nominal/4);
 		int rad_max = ceil(5*rad_nominal/4);
 		vector<double> radius;
-		vector<Point> center_Pin;
+		Point center_Pin_0, center_Pin_1;
 		//Check if the frame is empty
 		if (img.empty() == 0) {
 			//Crop the image ROI (upper half)
@@ -723,38 +792,112 @@ private:
 			GaussianBlur( gray, gray, Size(9, 9), 2, 2 );
 			//Hough circles detection (for the radius range rad_min-rad_max pxls)
 			//Min distance between two circles centers is img.rows/4. param_1 = 200, param_2 = param_1/2
-			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, gray.rows/4, 200, 100 , rad_min, rad_max);
+			HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, 20, 100, 50 , rad_min, rad_max);
 			//For each circle, draw circle on the image
-			for( size_t i = 0; i < circles.size(); i++ )
+			for( size_t i = 0; i < 6; i++ )
 			{
 				Point center(cvRound(circles[i][0]) + circle_ROI.x, cvRound(circles[i][1]) + circle_ROI.y);
+				//Point center(cvRound(circles[i][0]) , cvRound(circles[i][1]) );
 				radius.push_back( cvRound(circles[i][2]) );
+				cout << "Pin " << i << " radius: [" << radius.back() << endl;
 				// draw the circle center
 				circle( img, center, 3, Scalar(0,255,0), -1, 8, 0 );
 				// draw the circle outline
 				circle( img, center, radius.back(), Scalar(0,0,255), 3, 8, 0 );
+				
 				//Store the first two circles info
 				if (circles.size() >= 2) {
 					if ( i == 0 ){
-						center_Pin[0] = center;
+						center_Pin_0 = center;
 					} else if ( i == 1 ) {
-						center_Pin[1] = center;
+						center_Pin_1 = center;
 					}
-					//Calculate the orientation offset to be sent to UR
-					orient_Offset = atan2( (center_Pin[0].y-center_Pin[1].y) , (center_Pin[0].x-center_Pin[1].x) );
 				}
+			}
+			if (circles.size() >= 2) {
+				//Calculate the orientation offset to be sent to UR
+				if (center_Pin_0.x > center_Pin_1.x) {
+					orient_Offset = atan2( (center_Pin_0.y-center_Pin_1.y) , (center_Pin_0.x-center_Pin_1.x) );
+				} else {
+					orient_Offset = atan2( (center_Pin_1.y-center_Pin_0.y) , (center_Pin_1.x-center_Pin_0.x) );
+				}
+				orient_Offset = orient_Offset*180/CV_PI;
+				cout << "Orientation offset: " << orient_Offset << endl;
+				//Draw line between two detected circles
+				line( img, center_Pin_0, center_Pin_1, Scalar(255,0,255), 3 );
 			}
 			//Clear the pushed vectors
 			radius.clear();
-			center_Pin.clear();
-			
 			//Show the image with pins circles
 			imshow( "circles_pins", img );
-			waitKey(1);
+			waitKey(3);
 		}
+		return orient_Offset;
 	}
 	
 	
+
+	/** @function valveSizing */
+	//Valve size identification using Canny
+	void valveSizing(Mat img, Mat gray){
+		//Function vars
+		int edgeThresh = 1;
+		int lowThreshold = 40;
+		int const max_lowThreshold = 100;
+		int ratio = 5;
+		int kernel_size = 3;
+		Mat dst, detected_edges;
+		vector<vector<Point> > valve_contours;
+		vector<Vec4i> hierarchy;
+		RNG rng(12345);
+		
+		if (img.empty() == 0) {
+			//Crop the image ROI (at the center)
+			Rect valve_ROI (275 , 160 , 125 , 120);
+			gray = gray(valve_ROI);
+			/// Create a matrix of the same type and size as src (for dst)
+  			dst.create( img.size(), img.type() );
+			//Canny edge detection
+			/// Reduce noise with a kernel 3x3
+			blur( gray, detected_edges, Size(3,3) );
+			/// Canny detector
+			Canny( detected_edges, detected_edges, lowThreshold, lowThreshold*ratio, kernel_size );
+			////cvFindContours()
+        	findContours(detected_edges, valve_contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+			int cont_sz = valve_contours.size();
+			cout << cont_sz << endl;
+			
+			if (cont_sz > 0) {
+				vector<RotatedRect> minRect(cont_sz);
+				//Define 2D points for passing to the rectangle fcn
+				vector<vector<Point> > contours_poly(cont_sz);
+				//approxPolyDP( Mat(valve_contours), contours_poly, 3, true );
+				for (int i = 0; i < cont_sz; i++)
+				{
+					minRect[i] = minAreaRect( Mat(valve_contours[i]) );
+					cout << "Rectangle" << i << " area [" << minRect[i].size.width*minRect[i].size.height << "], Angle: [" << minRect[i].angle << endl;
+					//Draw the bounding rectangle
+					Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+					Point2f rect_points[4]; 
+					minRect[i].points( rect_points );
+	       			for( int j = 0; j < 4; j++ ){
+	       				//cout << minRect[i].points[0].x << endl;
+	       				line( dst, rect_points[j], rect_points[(j+1)%4], color, 1, 8 );
+	       			}
+				}
+				//rectangle(dst, Point(minRect[0].center.x, minRect[0].center.y), Point(minRect[0].size.width, minRect[0].size.height), Scalar(100,100,0), 1);
+			}
+			
+			
+			/// Using Canny's output as a mask, we display our result
+			dst = Scalar::all(0);
+			gray.copyTo( dst, detected_edges);
+			//Represent the ROI by a rectangle
+			//rectangle(dst, Point(valve_ROI.x, valve_ROI.y), Point(valve_ROI.width, valve_ROI.height), Scalar(100,100,0), 1);
+			imshow( "valve_image", dst );
+			waitKey(1);
+		}
+	}
 	
 	
 	
