@@ -1,33 +1,33 @@
 <launch>
 
-	<!--arg name="_port" defult="/dev/ttyACM0" /-->
-	<!--arg name="_port" push="/dev/ttyACM1" /-->
-
+	<!--UR5 bringup-->
         <include file="$(find ur_bringup)/launch/ur5_bringup.launch">
         <arg name= "robot_ip" value="192.168.131.18"/>
         </include>
 
+	<!--UR5 motion-->
 	<node pkg="ur5motion" type="ur5mode.py" name="ur5mode"  respawn="true" output="screen">
         </node>
-
-
-	<node pkg="smac_husky" type="main" name="node_SM"  respawn="true" output="screen">
+		
+	<!--Gripper Arduino-->
+        <node pkg="rosserial_python" type="serial_node.py" name="gripper_node" args="_port:=/dev/ttyACM1" respawn="true" output="screen">
         </node>
-
+	
+	<!--Gripper node-->
 	<node pkg="smac_husky" type="gripper" name="node_Grip"  respawn="true" output="screen">
         </node>
 
-        <node pkg="rosserial_python" type="serial_node.py" name="gripper_node" args="_port:=/dev/ttyACM1" respawn="true" output="screen">
-        </node>
-
-
+	<!--Sonar Arduino-->
         <node pkg="rosserial_python" type="serial_node.py" name="sonar_node" args="_port:=/dev/ttyACM2" respawn="true" output="screen">
         </node>
 
+	<!--Husky node-->
 	<node pkg="smac_husky" type="husky_0302_v0600" name="node_Husky" respawn="true" output="screen">
         </node>
 
-
+	<!--State machine-->
+	<node pkg="smac_husky" type="main" name="node_SM"  respawn="true" output="screen">
+        </node>
 
 </launch>
  
