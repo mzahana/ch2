@@ -34,6 +34,7 @@ public:
 	int cascade_Count, pin_Number_Detected, valve_Size_Detected;
 	string mode_V_cmd;
 	int checkDetection, valveSize, valveAngle, valveConfirm;
+	double nn_Threshold, tool_Validate;
 
 
 	//IdentSize vars
@@ -54,11 +55,11 @@ public:
 	CvANN_MLP* nnetwork;
 	Mat layers;
 	int min_L, min_W, no_of_in_layers, no_of_hid_layers, no_of_out_layers;
-	vector<double> data_mean_vec, nn_Output_vec;
+	vector<double> data_mean_vec;
 	
 	//Frame matrices
 	Mat frame, frame_gray, frame_to_ident, frame_color_ident;
-	Mat pce_mat, nnInput_Data_mat, nnInput_Data_matTr, nnTrain_out;
+	Mat pce_mat, nnInput_Data_mat, nnInput_Data_matTr, nnTrain_out, nnOut_Data_mat;
 	
 	//Separation test vars
 	vector<int> tools_Sep;
@@ -77,13 +78,15 @@ public:
 	//Constructor
 	VizLibrary(){
 		//Load the cascade classifier
-		cascade_name = "/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/toolDetector7_1(1).xml";
+		cascade_name = "/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/toolDetector7_2(3).xml";
 		if( !casClassifier.load( cascade_name ) ){ printf("--(!)Error loading xml file\n"); };
 		//Parameter initializations
 		min_L = 33, min_W = 33;
-		no_of_in_layers = 142; no_of_hid_layers = 142; no_of_out_layers = 1;
+		no_of_in_layers = 146; no_of_hid_layers = 146; no_of_out_layers = 3;
 		layers = (Mat_<int>(1,3) << no_of_in_layers,no_of_hid_layers,no_of_out_layers);
 		rect_Overlap_rat = 0.5;
+		nn_Threshold = 0.5;
+		tool_Validate = 0.5;
 		
 		//Separation check vars: Set based on distance from panel
 		sep_Pixel_min = 40;
@@ -95,7 +98,7 @@ public:
 		
 		//Ident variables
 		level_Count = 0;
-		n_Level = 12; i_Level = 1;
+		n_Level = 30; i_Level = 1;
 		noOfTools = 6;
 		pin_Number_Detected = 0;
 		valve_Size_Detected = 0;
@@ -225,7 +228,7 @@ public:
 			cout << "VIZ: Memory could not be allocated for NN!!!" << endl;
 			return -1;
 		}
-		nnetwork -> create(layers , CvANN_MLP::SIGMOID_SYM, 1, 1);
+		nnetwork -> create(layers , CvANN_MLP::SIGMOID_SYM, 0.5, 1);
 		
 		//NN training parameters
 		CvANN_MLP_TrainParams paramsNN = CvANN_MLP_TrainParams(
@@ -234,15 +237,33 @@ public:
 			0.1,
 			0.1);
 		
-		//Crop the last element of nn_Output_vec
-		nnTrain_out = Mat::zeros(nn_Output_vec.size()-1,1,CV_64F);
-		for (int i = 0; i < nn_Output_vec.size()-1; i++)
+		//Crop the last element of nnOut_Data_mat
+		/*
+		nnTrain_out = Mat::zeros(nnOut_Data_mat.rows-1,nnOut_Data_mat.cols,CV_64F);
+		
+		for (int i = 0; i < nnOut_Data_mat.rows-1; i++)
 		{
-			nnTrain_out.at<double>(i,0) = nn_Output_vec[i];
+			for (int j = 0; j < nnOut_Data_mat.cols; j++)
+			{
+				nnTrain_out.at<double>(i,j) = nnOut_Data_mat.at<double>(i,j);
+			}
 		}
+		*/
+		
+		//Reshape the output matrix for NN
+		nnTrain_out = nnOut_Data_mat;
+
 		//Train
 		nnetwork -> train(nnInput_Data_mat, nnTrain_out, Mat(), Mat(), paramsNN);
-		cout << "VIZ: NN trained" << endl;
+		cout << "VIZ: NN trained..." << endl;
+		//Store the NN xml file
+		cv::FileStorage fs("nnetwork1.xml", cv::FileStorage::WRITE); // or xml
+		nnetwork -> write(*fs, "nnetwork1"); // don't think too much about the deref, it casts to a FileNode
+		cout << "VIZ: NN is stored..." << endl;
+		
+		//Load the NN xml file
+		//nnetwork -> load("/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/nnetwork.xml","nnetwork");
+
 		return 0;
 	}
 
@@ -323,7 +344,7 @@ private:
 			vector<Rect> tools_Phase2_tmp, tools_Phase2_toNN;
 			//Run Cascade inside the detected tooltips
 			Mat toolROI = frame_gray( tools_ToSec[i] );
-			casClassifier.detectMultiScale( toolROI, tools_Phase2_tmp, 1.01, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
+			casClassifier.detectMultiScale( toolROI, tools_Phase2_tmp, 1.005, 1, 0|CASCADE_SCALE_IMAGE, Size(0, 0) );
 			//If tool(s) detected, append all at the end of the "tools"
 			if (tools_Phase2_tmp.empty() == 0) {
 				//Add the original (Phase1 tool) to tools
@@ -359,7 +380,7 @@ private:
 			//Draw the second detected and neural validated results
 			if (tools_Sec.empty() == 0)	{
 				for (int r = 0; r < tools_Sec.size(); r++) {
-	  	    		rectangle(frame, Point(tools_Sec[r].x, tools_Sec[r].y), Point(tools_Sec[r].x + tools_Sec[r].width, tools_Sec[r].y + tools_Sec[r].height), Scalar(0,255,0), 2);
+	  	    		//rectangle(frame, Point(tools_Sec[r].x, tools_Sec[r].y), Point(tools_Sec[r].x + tools_Sec[r].width, tools_Sec[r].y + tools_Sec[r].height), Scalar(0,255,0), 2);
 				}
 			}
 			
@@ -387,7 +408,7 @@ private:
 		Mat test_input_real = Mat::zeros(1,no_of_in_layers,CV_64F);
 		Mat img_Rect = _frame;
 		Mat nn_Img = _frame;
-		vector<Rect> tools_Neural_local, tools_Neural_out;
+		vector<Rect> tools_Neural_local, tools_Neural_local_right, tools_Neural_local_left, tools_Neural_out;
 		
 		//Run NN for each rectangle
 	    for( size_t i = 0; i < tools.size(); i++ ){
@@ -420,16 +441,32 @@ private:
 	        //cout << "VIZ: NN prediction starting..." << endl;
 	        
 	        test_input_real = test_input.t();
-	        Mat nnResult = Mat(1,1,CV_64F); //NN result is binary (here using int data type).
+	        Mat nnResult = Mat(1,3,CV_64F); //NN result is binary (here using int data type).
+	        for (int i = 0; i < nnResult.cols; i++) { nnResult.at<double>(0,i) = 0; }
+	        
 	        nnetwork -> predict(test_input_real, nnResult);
 	        
 	        //Show the NN prediction result for the ith tool
-	        //cout << nnResult.at<double>(0,0) << endl;
-	        if (nnResult.at<double>(0,0) > 0.75) {
-	        	//Store the NN identified tools in tools_Neural
-				tools_Neural_local.push_back( tools[i] );
-	        	//rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(0,0,255), 2); 
-	        	//cout << "VIZ: Tool detected with NN" << endl;
+	        cout << "NN result: Right [" << nnResult.at<double>(0,0) << "], Left [" << nnResult.at<double>(0,1) << "], UObj [" << nnResult.at<double>(0,2) << "]" << endl;
+	        //If tool is not "Unidentified", check for the face
+	        if ( abs(nnResult.at<double>(0,2)) < tool_Validate)
+	        {
+	        	if ( nnResult.at<double>(0,0) > nnResult.at<double>(0,1) )
+	        	{
+	        		if (nnResult.at<double>(0,0) > nn_Threshold) {
+			        	//Store the NN identified tools in tools_Neural
+						tools_Neural_local.push_back( tools[i] );
+			        	rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(0,200,0), 2);
+			        }
+	        	} else {
+	        		if (nnResult.at<double>(0,1) > nn_Threshold) {
+			        	//Store the NN identified tools in tools_Neural
+						tools_Neural_local.push_back( tools[i] );
+			        	rectangle(_frame, Point(tools[i].x, tools[i].y), Point(tools[i].x + tools[i].width, tools[i].y + tools[i].height), Scalar(0,0,200), 2); 
+			        }
+			    }
+	        } else {
+	        	//tool is "Unidentified". Do not add this to tools_Neural
 	        }
 	        toolsColTemp.clear();
 	    }
@@ -437,6 +474,8 @@ private:
 		tools_Neural_out = tools_Neural_local;
 	    //Clear tools
 	    tools.clear();
+	    tools_Neural_local_right.clear();
+	    tools_Neural_local_left.clear();
 	    tools_Neural_local.clear();
 	    //Return the sorted tools
 	    return tools_Neural_out;
@@ -829,8 +868,8 @@ private:
 			//Clear the pushed vectors
 			radius.clear();
 			//Show the image with pins circles
-			imshow( "circles_pins", img );
-			waitKey(3);
+			//imshow( "circles_pins", img );
+			//waitKey(3);
 		}
 		return orient_Offset;
 	}
@@ -950,7 +989,7 @@ private:
 			}
 		}
 		
-		
+		//------------------------------------------
 		std::ifstream ifs20 ("/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/w.csv", ifstream::in);
 		vector<vector<double> > all_data2;
 		while (getline(ifs20,current_line)) {
@@ -977,19 +1016,34 @@ private:
 		
 		
 		std::ifstream  ifs4 ("/home/risc/catkin_ws/src/smach_trial/src/rexmlfiles/t.csv", ifstream::in);
-		while (ifs4.good()) {
-			getline(ifs4,nn_Output);
-			std::stringstream sstrm4(nn_Output);
-			double nn_Output_Temp;
-			sstrm4 >> nn_Output_Temp;
-			nn_Output_vec.push_back(nn_Output_Temp);
+		vector<vector<double> > all_data3;
+		while (getline(ifs4,current_line)) {
+			vector<double> values;
+			stringstream temp(current_line);
+			string single_value;
+			while(getline(temp,single_value,',')){
+				// convert the string element to a integer value
+				values.push_back(atof(single_value.c_str()));
+			}
+			// add the row to the complete data vector
+			all_data3.push_back(values);
 		}
-		ifs4.close();
 		
+		// Now add all the data into a Mat element
+		nnOut_Data_mat = Mat::zeros((int)all_data3.size(), (int)all_data3[0].size(), CV_64F);
+		// Loop over vectors and add the data
+		for(int rows = 0; rows < (int)all_data3.size(); rows++){
+			for(int cols= 0; cols< (int)all_data3[0].size(); cols++){
+				nnOut_Data_mat.at<double>(rows,cols) = all_data3[rows][cols];
+			}
+		}
+
+		
+		//------------------------------------------
 		cout << data_mean_vec.size() << endl;
 		cout << pce_mat.size() << endl;
 		cout << nnInput_Data_mat.size() << endl;
-		cout << nn_Output_vec.size() << endl;
+		cout << nnOut_Data_mat.size() << endl;
 		
 	}
 };

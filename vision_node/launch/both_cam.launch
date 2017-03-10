@@ -1,0 +1,37 @@
+<launch>
+	<!--Launch the usb_cam_center and show video-->
+	<group ns="cam_center">
+		<node name="usb_cam_center" pkg="usb_cam" type="usb_cam_node" output="screen" >
+			<param name="video_device" value="/dev/video2" />
+			<param name="image_width" value="640" />
+			<param name="image_height" value="480" />
+			<param name="pixel_format" value="yuyv" />
+			<param name="camera_frame_id" value="usb_cam" />
+			<param name="io_method" value="mmap"/>
+		</node>
+		
+		<!--Run rectification -->
+		<node ns="usb_cam_center" name="image_proc" pkg="image_proc" type="image_proc" respawn="false" output="screen">
+		</node>
+		
+		<!--Show video -->
+		<node name="image_view" pkg="image_view" type="image_view" respawn="false" output="screen">
+			<remap from="image" to="/cam_center/usb_cam_center/image_rect_color"/>
+			<param name="autosize" value="true" />
+		</node>
+	</group>
+	
+
+	<!--*************************** -->
+	<!--Run the vision node -->
+	<node pkg="smach_trial" name="vision_main" type="vision" respawn="true"  output="screen">
+	</node>
+	
+	<!--Launch the cup files-->
+	<node name="videoBridge" pkg="smach_trial" type="videoBridge.py" respawn="false" output="screen">
+	</node>
+	
+	<node name="getValve2" pkg="smach_trial" type="getValve2.py" respawn="false" output="screen">
+	</node>
+
+</launch>

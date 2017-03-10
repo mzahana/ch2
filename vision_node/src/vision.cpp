@@ -35,8 +35,8 @@ int main(int argc, char **argv)
 	
 	//Cascade detection object
 	VizLibrary vizlibObj;
-	//vizlibObj.trainNN();
-	//vizlibObj.detectAndIdent();
+	vizlibObj.trainNN();
+	vizlibObj.detectAndIdent();
 	
 	
 	//Variables published
@@ -54,7 +54,7 @@ int main(int argc, char **argv)
 	//SUBSCRIBE
 	//Image transport object
 	image_transport::ImageTransport it(node_Viz);
-	image_transport::Subscriber sub = it.subscribe("usb_cam/image_rect_color", 1, &VizLibrary::imageCallback, &vizlibObj);
+	image_transport::Subscriber sub = it.subscribe("cam_center/usb_cam_center/image_rect_color", 1, &VizLibrary::imageCallback, &vizlibObj);
 	//System mode
 	ros::Subscriber sub_mode_system = node_Viz.subscribe<std_msgs::String>("cmdmode_viz", 100, &VizLibrary::modeCb, &vizlibObj);
 	//Subscribe to joint_states to record in Mode 2
@@ -142,6 +142,8 @@ int main(int argc, char **argv)
 			//Update the current mode
 			mode_Viz.data = "sizingDone";
 		} else if (vizlibObj.mode_V_cmd == "alignPins") {
+			//Bypass this mode, switch directly to the next mode!
+			/*
 			//Valve sizing
 			vizlibObj.detect_pinsPub();
 			cam_offset.data = vizlibObj.orient_Offset;
@@ -159,8 +161,14 @@ int main(int argc, char **argv)
 				//Valve not detected. Search for valve with small motions (at certain height)
 				mode_Viz.data = "aligningPins";
 			}
+			*/
+			//Update the current mode
+			mode_Viz.data = "pinsAligned";
 			//Camera-pin offset publisher
+			cam_offset.data = 0.0;
 			pub_v_camoffset.publish(cam_offset);
+			//To avoid confusion, sleep for some time
+			sleep(0.1);
 		} else if ((mode_Viz.data != "toolsSized") && (vizlibObj.mode_V_cmd == "detectTools")) {
 			//Tool detection mode: Detect 6 tools and if found return
 			int detect_Res = vizlibObj.detectAndIdent();
