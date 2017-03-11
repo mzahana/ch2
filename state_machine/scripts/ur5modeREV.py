@@ -98,8 +98,9 @@ def main():
 
     Reset              = True    
     DoWeNeedAlignedUpDown = False 
-   
-   
+    greensidepushed      = False
+    bluesidepushed      = False
+
    
 
 
@@ -150,7 +151,7 @@ def main():
 		        dq = degShift/180.0*np.pi # degShift  degree shift per second
 		        Q = sm.jointPosition
 		        print Q[4]
-		        if (greenSide and blueSide):
+		        if (greenSide and blueSide) or (greensidepushed and greensidepushed):
 		            Aligned = True
 		            Crawling = False
 		            sm.q5offset = Q[4] - rospy.get_param('/ur5/poseReady')[4]
@@ -164,10 +165,11 @@ def main():
 		            sm.client.wait_for_result()
 
 		            if greenSide: # Assumes green side on right when facing panel
+				greensidepushed=True	
 		                sm.q5offset = sm.q5offset + dq
 		            else: # blueSide
 		                sm.q5offset = sm.q5offset - dq
-
+				bluesidepushed=True
 			    Crawling = True # Move forward again
    		            Aligned = True
 		        else:
@@ -311,14 +313,21 @@ def main():
                 q1Valve,q2Valve,q3Valve,q4Valve,q5Valve,q6Valve = sm.jointPosition
 
                 print "xValve/yValve/zValve: ", xValve,yValve,zValve
+                time.sleep(1.0)
 
-		flag = sm.xyzShift(0.0, 0.0,-245, velCmd)
+		#flag = sm.xyzShift(0.0, 0.0,-245, velCmd)
+	
+		#sm.client.wait_for_result()
+
+		flag = sm.xyzShift(xTouch-xValve+55,-50,0.0, 0.7*velCmd)
+
+                sm.client.wait_for_result()
+		
+		flag = sm.xyzShift(0.0, 0.0,-100, velCmd)
 	
 		sm.client.wait_for_result()
 
-		flag = sm.xyzShift(xTouch-xValve+55,-5,0.0, 0.7*velCmd)
 
-                sm.client.wait_for_result()
 		valveSizingLoacl =False
 
 
@@ -419,7 +428,38 @@ def main():
 	elif   sm.ur_mode=="goCorrectTool":
 		xCmd = xTouch+100+Margin
 		yCmd = yValve+348.0+50.0*(sm.PinNumber-1)
-		zCmd = zValve + (225-(180+8.5*(sm.ToolSize- 16)))
+		
+		if sm.ToolSize == 16:
+			Lkey = 200
+			zCmd = zValve + (225-(Lkey-sm.ToolSize/2-5))
+		if sm.ToolSize == 17:
+			Lkey = 205
+			zCmd = zValve + (225-(Lkey-sm.ToolSize/2-5))
+
+		if sm.ToolSize == 18:
+			Lkey = 215
+			zCmd = zValve + (225-(Lkey-sm.ToolSize/2-5))
+		if sm.ToolSize == 19:
+			Lkey = 230
+			zCmd = zValve + (225-(Lkey-sm.ToolSize/2-5))
+		if sm.ToolSize == 20:
+			Lkey = 240
+			zCmd = zValve + (225-(Lkey-sm.ToolSize/2-5))
+		if sm.ToolSize == 21:
+			Lkey = 250
+			zCmd = zValve + (225-(Lkey-sm.ToolSize/2-5))
+		if sm.ToolSize == 22:
+			Lkey = 260
+			zCmd = zValve + (225-(Lkey-sm.ToolSize/2-5))
+		if sm.ToolSize == 23:
+			Lkey = 270
+			zCmd = zValve + (225-(Lkey-sm.ToolSize/2-5))
+		if sm.ToolSize == 24:
+			Lkey = 280
+			zCmd = zValve + (225-(Lkey-sm.ToolSize/2-5))
+
+			
+			#zCmd = zValve + (225-(180+8.5*(sm.ToolSize- 16)))
 
 		flag = sm.xyzGoto(xCmd,yCmd,zCmd, velocity)
 		sm.client.wait_for_result()
