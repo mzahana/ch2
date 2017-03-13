@@ -6,7 +6,7 @@
         </include>
 
 	<!--UR5 motion-->
-	<node pkg="ur5motion" type="ur5mode.py" name="ur5mode"  respawn="true" output="screen">
+	<node pkg="ur5motion" type="ur5modeREV.py" name="ur5modeREV"  respawn="true" output="screen">
         </node>
 		
 	<!--Gripper Arduino-->
