@@ -64,11 +64,14 @@ class ur5Class():
 	self.ToolFace   = ""
 	self.camOffset  = 0
 	self.ValveAngle  = 0
-
+	self.SICK_Dis = 200
 
       # Subscribe to state machine modes
         self.subSm = rospy.Subscriber('/cmdmode_ur', String, self.cbsm)
 	self.subPinNumber = rospy.Subscriber('/pin_number', Int32, self.cbpin)
+	
+	self.subSICK = rospy.Subscriber('/SICK_distance', Int32, self.cbsick)
+
 	self.subValveSize = rospy.Subscriber('/valve_sizeUr', Int32, self.cbvs)
         self.subValveAngle = rospy.Subscriber('/valve_angleUr', Int32, self.cbva)
 
@@ -129,6 +132,12 @@ class ur5Class():
             self.ToolFace = msg.data
             print "Tool Face is: ",self.ToolFace 
 
+
+
+
+    def cbsick(self,msg):
+        if not msg == None:
+            self.SICK_Dis = msg.data
 
 
 
