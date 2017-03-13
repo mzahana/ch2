@@ -120,10 +120,11 @@ def main():
 			state_topic = "Ready" 
 			sm.jointGoto(rospy.get_param('/ur5/poseReady'),dwellTime)
 			time.sleep(dwellTime)
-
+			
 			sm.client.wait_for_result()
-
-			flag = sm.xyzShift(-280, 0.0, -100.0,1.3* velCmd)
+			
+			Linit=sm.SICK_Dis
+			flag = sm.xyzShift(-Linit, 0.0, -100.0,1.3* velCmd)
 			sm.client.wait_for_result()
 
 			Intitial=False
