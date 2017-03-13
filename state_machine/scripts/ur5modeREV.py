@@ -123,7 +123,7 @@ def main():
 			
 			sm.client.wait_for_result()
 			
-			Linit=sm.SICK_Dis
+			Linit=sm.SICK_Dis-250
 			flag = sm.xyzShift(-Linit, 0.0, -100.0,1.3* velCmd)
 			sm.client.wait_for_result()
 
