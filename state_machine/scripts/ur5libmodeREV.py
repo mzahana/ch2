@@ -64,7 +64,7 @@ class ur5Class():
 	self.ToolFace   = ""
 	self.camOffset  = 0
 	self.ValveAngle  = 0
-	self.SICK_Dis = 200
+	self.SICK_Dis = 450
 
       # Subscribe to state machine modes
         self.subSm = rospy.Subscriber('/cmdmode_ur', String, self.cbsm)
